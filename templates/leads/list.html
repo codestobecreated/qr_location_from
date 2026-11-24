@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% load relux humanize %}
+{% block title %}Leads{% endblock %}
+{% block page_title %}Lead Management{% endblock %}
+{% block content %}
+<div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+  <p class="text-sm text-slate-500">
+    {% if request.user.is_staff_member %}Leads assigned to you.{% elif request.user.is_manager %}Leads from your assigned locations.{% else %}All leads across every location.{% endif %}
+    <strong class="text-slate-900">{{ page.paginator.count|intcomma }}</strong> matching.
+  </p>
+  {% if not request.user.is_staff_member %}
+  <div class="flex flex-wrap gap-2">
+    <a class="btn-light" href="{% url 'leads:export' %}?{% url_replace format='csv' page='' %}">Export CSV</a>
+    <a class="btn-primary" href="{% url 'leads:export' %}?{% url_replace format='xlsx' page='' %}">Export Excel</a>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <form method="get" class="grid grid-cols-1 gap-3 border-b border-slate-100 p-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+    <input type="hidden" name="sort" value="{{ request.GET.sort }}">
+    <div class="sm:col-span-2"><label class="label" for="q">Search</label>
+      <input id="q" type="search" name="q" value="{{ filters.q }}" class="input" placeholder="Name, mobile, email, lead ID, token"></div>
+    <div><label class="label" for="location">Location</label>
+      <select id="location" name="location" class="input" data-autosubmit><option value="">All</option>
+        {% for l in locations %}<option value="{{ l.pk }}" {% if filters.location == l.pk|stringformat:"d" %}selected{% endif %}>{{ l.name }}</option>{% endfor %}</select></div>
+    <div><label class="label" for="station">Station</label>
+      <select id="station" name="station" class="input" data-autosubmit><option value="">All</option>
+        {% for s in stations %}<option value="{{ s.pk }}" {% if filters.station == s.pk|stringformat:"d" %}selected{% endif %}>{{ s.name }} ({{ s.station_id }})</option>{% endfor %}</select></div>
+    <div><label class="label" for="state">State</label>
+      <select id="state" name="state" class="input" data-autosubmit><option value="">All</option>
+        {% for s in states %}<option value="{{ s }}" {% if filters.state|lower == s|lower %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></div>
+    <div><label class="label" for="city">City</label>
+      <select id="city" name="city" class="input" data-autosubmit><option value="">All</option>
+        {% for c in cities %}<option value="{{ c }}" {% if filters.city|lower == c|lower %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></div>
+    <div><label class="label" for="category">Category</label>
+      <select id="category" name="category" class="input" data-autosubmit><option value="">All</option>
+        {% for v, l in categories %}<option value="{{ v }}" {% if filters.category == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+    <div><label class="label" for="status">Status</label>
+      <select id="status" name="status" class="input" data-autosubmit><option value="">All</option>
+        {% for v, l in statuses %}<option value="{{ v }}" {% if filters.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+    {% if can_assign %}
+    <div><label class="label" for="assigned">Assigned to</label>
+      <select id="assigned" name="assigned" class="input" data-autosubmit><option value="">Anyone</option>
+        <option value="me" {% if filters.assigned == 'me' %}selected{% endif %}>Me</option>
+        <option value="none" {% if filters.assigned == 'none' %}selected{% endif %}>Unassigned</option>
+        {% for u in assignees %}<option value="{{ u.pk }}" {% if filters.assigned == u.pk|stringformat:"d" %}selected{% endif %}>{{ u.display_name }}</option>{% endfor %}</select></div>
+    {% endif %}
+    <div><label class="label" for="date_from">From</label><input id="date_from" type="date" name="date_from" value="{{ filters.date_from }}" class="input"></div>
+    <div><label class="label" for="date_to">To</label><input id="date_to" type="date" name="date_to" value="{{ filters.date_to }}" class="input"></div>
+    <div><label class="label" for="duplicates">Duplicates</label>
+      <select id="duplicates" name="duplicates" class="input" data-autosubmit>
+        <option value="">Hide duplicates</option>
+        <option value="include" {% if filters.duplicates == 'include' %}selected{% endif %}>Include duplicates</option>
+        <option value="only" {% if filters.duplicates == 'only' %}selected{% endif %}>Only duplicates</option></select></div>
+    <div class="flex items-end gap-2"><button class="btn-blue flex-1">Apply</button>{% if has_filters %}<a href="{% url 'leads:list' %}" class="btn-light">Clear</a>{% endif %}</div>
+  </form>
+
+  <form method="post" action="{% url 'leads:bulk_action' %}">
+    {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+    {% if can_assign %}
+    <div class="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-4 py-2 text-sm">
+      <span class="text-slate-500"><span data-selection-count="ids">0</span> selected</span>
+      <select name="action" class="input !w-auto !py-1.5 text-xs" aria-label="Bulk action">
+        <option value="status">Set status →</option><option value="assign">Assign to →</option></select>
+      <select name="status" class="input !w-auto !py-1.5 text-xs" aria-label="Status">{% for v, l in statuses %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select>
+      <select name="assigned_to" class="input !w-auto !py-1.5 text-xs" aria-label="Assignee"><option value="none">Unassigned</option>{% for u in assignees %}<option value="{{ u.pk }}">{{ u.display_name }}</option>{% endfor %}</select>
+      <button class="btn-light btn-sm" type="submit">Apply to selected</button>
+    </div>
+    {% endif %}
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr>
+          {% if can_assign %}<th class="w-8"><input type="checkbox" data-select-all="ids" aria-label="Select all" class="rounded border-slate-300"></th>{% endif %}
+          <th><a href="?{% sort_link 'lead_id' %}">Lead ID {% sort_icon 'lead_id' %}</a></th>
+          <th><a href="?{% sort_link 'name' %}">Customer {% sort_icon 'name' %}</a></th>
+          <th>Email</th>
+          <th><a href="?{% sort_link 'category' %}">Category {% sort_icon 'category' %}</a></th>
+          <th><a href="?{% sort_link 'location' %}">Location {% sort_icon 'location' %}</a></th>
+          <th><a href="?{% sort_link 'station' %}">Station {% sort_icon 'station' %}</a></th>
+          <th><a href="?{% sort_link 'city' %}">City / State {% sort_icon 'city' %}</a></th>
+          <th>Station ID / QR</th>
+          <th><a href="?{% sort_link 'date' %}">Submitted {% sort_icon 'date' %}</a></th>
+          <th><a href="?{% sort_link 'status' %}">Status {% sort_icon 'status' %}</a></th>
+          <th class="text-right">Actions</th>
+        </tr></thead>
+        <tbody>
+        {% for lead in page %}
+          <tr>
+            {% if can_assign %}<td><input type="checkbox" name="ids" value="{{ lead.pk }}" class="rounded border-slate-300" aria-label="Select {{ lead.lead_id }}"></td>{% endif %}
+            <td class="font-mono text-xs"><a class="link" href="{{ lead.get_absolute_url }}">{{ lead.lead_id }}</a>{% if lead.is_duplicate %}<div><span class="chip !py-0 !text-[10px]">Duplicate</span></div>{% endif %}</td>
+            <td class="whitespace-nowrap"><div class="font-medium text-slate-900">{{ lead.full_name }}</div><a class="text-xs text-electric-700" href="tel:{{ lead.mobile }}">{{ lead.mobile }}</a></td>
+            <td class="max-w-[12rem] truncate text-xs">{{ lead.email|default:"—" }}</td>
+            <td class="text-xs">{{ lead.get_category_display }}</td>
+            <td class="text-xs">{{ lead.location_name }}</td>
+            <td class="text-xs">{{ lead.station_name }}</td>
+            <td class="text-xs">{{ lead.source_city }}<div class="text-slate-500">{{ lead.source_state }}</div></td>
+            <td class="font-mono text-[11px]">{{ lead.station_code }}<div class="text-slate-400">{{ lead.qr_token|truncatechars:12 }}</div></td>
+            <td class="whitespace-nowrap text-xs">{{ lead.submitted_at|date:"d M Y" }}<div class="text-slate-500">{{ lead.submitted_at|date:"h:i A" }}</div></td>
+            <td>{% badge lead.status lead.get_status_display %}{% if lead.assigned_to %}<div class="mt-1 text-[11px] text-slate-500">→ {{ lead.assigned_to.display_name }}</div>{% endif %}</td>
+            <td class="text-right"><a class="btn-light btn-sm" href="{{ lead.get_absolute_url }}">Open</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="12" class="py-16 text-center text-slate-500">No leads match these filters.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+  {% include "partials/pagination.html" %}
+</div>
+{% endblock %}

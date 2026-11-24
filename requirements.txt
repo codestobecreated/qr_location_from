@@ -1,0 +1,10 @@
+# RELUX ELECTRIC – QR-Based Lead Management System
+# Python 3.10+ (tested on 3.12). Versions below are the tested set.
+Django==5.2.19            # LTS (security support until April 2028)
+qrcode==8.2               # QR matrix generation
+Pillow==13.0.0            # QR card rendering, PNG and print-ready PDF output
+openpyxl==3.1.5           # Excel import/export
+python-dotenv==1.2.4      # .env configuration
+whitenoise==6.12.0        # serves static files in production
+gunicorn==27.0.1          # production WSGI server (Linux)
+tzdata==2026.6            # time-zone data (needed on Windows)

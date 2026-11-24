@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% load relux humanize %}
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard Overview{% endblock %}
+{% block content %}
+<div class="mb-6 overflow-hidden rounded-2xl bg-gradient-to-r from-brand-700 via-brand-600 to-electric-600 p-6 text-white shadow-glow sm:p-8">
+  <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+    <div>
+      <p class="text-sm text-white/80">{% now "l, d F Y" %}</p>
+      <h2 class="mt-1 text-2xl font-bold sm:text-3xl">Welcome back, {{ request.user.first_name|default:request.user.username }} ⚡</h2>
+      <p class="mt-1 text-sm text-white/85">
+        {% if request.user.is_staff_member %}You have {{ stats.new }} new lead{{ stats.new|pluralize }} assigned to you.
+        {% else %}{{ stats.today }} lead{{ stats.today|pluralize }} and {{ stats.scans_today }} QR scan{{ stats.scans_today|pluralize }} today.{% endif %}
+      </p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <a href="{% url 'leads:list' %}?status=new" class="btn bg-white text-brand-800 hover:bg-white/90">View new leads</a>
+      {% if request.user.is_super_admin %}<a href="{% url 'stations:create' %}" class="btn bg-white/15 text-white ring-1 ring-white/30 hover:bg-white/25">+ Add station</a>{% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+{% if not request.user.is_staff_member %}
+  <a href="{% url 'locations:list' %}" class="stat-card hover:border-brand-300"><span class="stat-label">Total locations</span><span class="stat-value">{{ stats.locations|intcomma }}</span></a>
+  <a href="{% url 'stations:list' %}" class="stat-card hover:border-brand-300"><span class="stat-label">Charging stations</span><span class="stat-value">{{ stats.stations|intcomma }}</span></a>
+  <a href="{% url 'qrcodes:list' %}?qr_status=active" class="stat-card hover:border-brand-300"><span class="stat-label">Active QR codes</span><span class="stat-value">{{ stats.active_qr|intcomma }}</span></a>
+  <a href="{% url 'analytics:overview' %}?range=all" class="stat-card hover:border-brand-300"><span class="stat-label">Total QR scans</span><span class="stat-value">{{ stats.scans|intcomma }}</span></a>
+  <a href="{% url 'leads:list' %}" class="stat-card hover:border-brand-300"><span class="stat-label">Total leads</span><span class="stat-value">{{ stats.total|intcomma }}</span></a>
+{% endif %}
+  {% if request.user.is_staff_member %}<a href="{% url 'leads:list' %}" class="stat-card"><span class="stat-label">My leads</span><span class="stat-value">{{ stats.total|intcomma }}</span></a>{% endif %}
+  <a href="{% url 'leads:list' %}?date_from={% now 'Y-m-d' %}&date_to={% now 'Y-m-d' %}" class="stat-card hover:border-electric-300"><span class="stat-label">Today's leads</span><span class="stat-value text-electric-700">{{ stats.today|intcomma }}</span></a>
+  <a href="{% url 'leads:list' %}?date_from={% now 'Y-m' %}-01" class="stat-card hover:border-electric-300"><span class="stat-label">This month</span><span class="stat-value">{{ stats.month|intcomma }}</span></a>
+  <a href="{% url 'leads:list' %}?status=new" class="stat-card hover:border-electric-300"><span class="stat-label">New leads</span><span class="stat-value text-blue-700">{{ stats.new|intcomma }}</span></a>
+  <a href="{% url 'leads:list' %}?status=contacted" class="stat-card hover:border-electric-300"><span class="stat-label">Contacted</span><span class="stat-value text-indigo-700">{{ stats.contacted|intcomma }}</span></a>
+  <a href="{% url 'leads:list' %}?status=converted" class="stat-card hover:border-electric-300"><span class="stat-label">Converted</span><span class="stat-value text-brand-700">{{ stats.converted|intcomma }}</span><span class="text-xs text-slate-500">{{ stats.conversion_rate|floatformat:2 }}% conversion</span></a>
+</div>
+
+<div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
+  <div class="card card-pad xl:col-span-2">
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="card-title">Last 14 days</h2>
+      {% if not request.user.is_staff_member %}<a class="link text-sm" href="{% url 'analytics:overview' %}">Full analytics →</a>{% endif %}
+    </div>
+    <div class="h-72"><canvas id="trend-chart" data-chart="trend" data-source="trend-data" role="img" aria-label="Leads and scans over the last 14 days"></canvas></div>
+    {{ chart|json_script:"trend-data" }}
+  </div>
+  <div class="card card-pad">
+    <h2 class="card-title mb-4">Enquiry mix · 30 days</h2>
+    <div class="h-72"><canvas id="category-chart" data-chart="doughnut" data-source="category-data" role="img" aria-label="Enquiry categories"></canvas></div>
+    {{ category_chart|json_script:"category-data" }}
+  </div>
+</div>
+
+<div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
+  <div class="card xl:col-span-2">
+    <div class="flex items-center justify-between p-5"><h2 class="card-title">Recent leads</h2><a class="link text-sm" href="{% url 'leads:list' %}">View all →</a></div>
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th>Lead</th><th>Customer</th><th>Category</th><th>Station</th><th>When</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for lead in recent_leads %}
+        <tr>
+          <td><a class="link font-mono text-xs" href="{{ lead.get_absolute_url }}">{{ lead.lead_id }}</a></td>
+          <td class="whitespace-nowrap">{{ lead.full_name }}<div class="text-xs text-slate-500">{{ lead.mobile }}</div></td>
+          <td class="text-xs">{{ lead.get_category_display }}</td>
+          <td class="text-xs">{{ lead.station_name }}<div class="text-slate-500">{{ lead.source_city }}</div></td>
+          <td class="whitespace-nowrap text-xs">{{ lead.submitted_at|naturaltime }}</td>
+          <td>{% badge lead.status lead.get_status_display %}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6" class="py-12 text-center text-slate-500">No leads yet. Leads appear here as soon as customers scan a station QR code and submit the form.</td></tr>
+      {% endfor %}
+      </tbody></table></div>
+  </div>
+  <div class="space-y-6">
+    {% if top_stations %}
+    <div class="card">
+      <div class="p-5"><h2 class="card-title">Top stations · 30 days</h2></div>
+      <ul class="divide-y divide-slate-100">
+        {% for s in top_stations %}
+        <li class="flex items-center justify-between gap-3 px-5 py-3">
+          <div class="min-w-0"><a class="link text-sm" href="{% url 'analytics:station' s.pk %}">{{ s.name }}</a><p class="truncate text-xs text-slate-500">{{ s.location.name }}</p></div>
+          <div class="text-right text-xs"><p class="font-semibold text-slate-900">{{ s.m_leads }} leads</p><p class="text-slate-500">{{ s.m_scans }} scans</p></div>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    <div class="card">
+      <div class="p-5"><h2 class="card-title">Upcoming follow-ups</h2></div>
+      <ul class="divide-y divide-slate-100">
+        {% for n in follow_ups %}
+        <li class="px-5 py-3">
+          <a class="link text-sm" href="{{ n.lead.get_absolute_url }}#notes">{{ n.lead.full_name }}</a>
+          <p class="text-xs {% if n.follow_up_at < now %}font-semibold text-rose-600{% else %}text-slate-500{% endif %}">{{ n.follow_up_at|date:"d M, h:i A" }}{% if n.follow_up_at < now %} · overdue{% endif %}</p>
+          <p class="truncate text-xs text-slate-600">{{ n.note }}</p>
+        </li>
+        {% empty %}
+        <li class="px-5 py-8 text-center text-sm text-slate-500">No follow-ups scheduled for the next 7 days.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}{% include "partials/chart_js.html" %}{% endblock %}

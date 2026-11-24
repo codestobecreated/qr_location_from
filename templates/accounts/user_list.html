@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% load relux %}
+{% block title %}User Management{% endblock %}
+{% block page_title %}User Management{% endblock %}
+{% block content %}
+<div class="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+  <div class="stat-card"><span class="stat-label">Total users</span><span class="stat-value">{{ counts.total }}</span></div>
+  <div class="stat-card"><span class="stat-label">Super Admins</span><span class="stat-value">{{ counts.admins }}</span></div>
+  <div class="stat-card"><span class="stat-label">Managers</span><span class="stat-value">{{ counts.managers }}</span></div>
+  <div class="stat-card"><span class="stat-label">Staff</span><span class="stat-value">{{ counts.staff }}</span></div>
+</div>
+
+<div class="card">
+  <div class="flex flex-col gap-3 border-b border-slate-100 p-4 lg:flex-row lg:items-end lg:justify-between">
+    <form method="get" class="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-4">
+      <div class="sm:col-span-2"><label class="label" for="q">Search</label><input id="q" name="q" value="{{ q }}" class="input" placeholder="Name, username or email"></div>
+      <div><label class="label" for="role">Role</label>
+        <select id="role" name="role" class="input" data-autosubmit><option value="">All roles</option>
+          {% for value, label in roles %}<option value="{{ value }}" {% if role == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select></div>
+      <div><label class="label" for="status">Status</label>
+        <select id="status" name="status" class="input" data-autosubmit>
+          <option value="">All</option><option value="active" {% if status == 'active' %}selected{% endif %}>Active</option><option value="inactive" {% if status == 'inactive' %}selected{% endif %}>Inactive</option>
+        </select></div>
+    </form>
+    <div class="flex gap-2">
+      <a href="{% url 'accounts:audit_log' %}" class="btn-light">Audit log</a>
+      <a href="{% url 'accounts:user_create' %}" class="btn-primary">+ Add user</a>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>User</th><th>Role</th><th>Assigned locations</th><th>Assigned leads</th><th>Last login</th><th>Status</th><th class="text-right">Actions</th></tr></thead>
+      <tbody>
+      {% for u in page %}
+        <tr>
+          <td>
+            <div class="font-semibold text-slate-900">{{ u.display_name }}</div>
+            <div class="text-xs text-slate-500">@{{ u.username }} · {{ u.email|default:"no email" }}</div>
+          </td>
+          <td>{% badge u.role u.role_label %}</td>
+          <td>{% if u.is_super_admin %}<span class="text-xs text-slate-500">All</span>{% elif u.role == 'manager' %}{{ u.location_count }}{% else %}—{% endif %}</td>
+          <td>{{ u.lead_count }}</td>
+          <td class="whitespace-nowrap text-xs">{{ u.last_login|date:"d M Y, H:i"|default:"Never" }}</td>
+          <td>{% if u.is_active %}{% badge "active" %}{% else %}{% badge "inactive" %}{% endif %}</td>
+          <td class="text-right whitespace-nowrap">
+            <a href="{% url 'accounts:user_edit' u.pk %}" class="btn-light btn-sm">Edit</a>
+            <a href="{% url 'accounts:user_set_password' u.pk %}" class="btn-light btn-sm">Password</a>
+            {% if u.pk != request.user.pk %}
+            <form method="post" action="{% url 'accounts:user_toggle' u.pk %}" class="inline" data-confirm="{% if u.is_active %}Deactivate{% else %}Activate{% endif %} {{ u.display_name }}?" data-confirm-style="{% if u.is_active %}danger{% else %}primary{% endif %}">
+              {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+              <button class="btn-sm {% if u.is_active %}btn-danger{% else %}btn-green{% endif %}">{% if u.is_active %}Deactivate{% else %}Activate{% endif %}</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" class="py-12 text-center text-slate-500">No users match your filters.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "partials/pagination.html" %}
+</div>
+{% endblock %}

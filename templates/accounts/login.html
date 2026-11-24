@@ -1,0 +1,53 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  {% include "partials/head_assets.html" %}
+  <title>Sign in · RELUX ELECTRIC Lead Management</title>
+</head>
+<body class="h-full font-sans antialiased hero-gradient">
+<div class="flex min-h-full">
+  <div class="relative hidden w-1/2 overflow-hidden bg-gradient-to-br from-brand-700 via-brand-600 to-electric-700 lg:flex lg:flex-col lg:justify-between p-12 text-white">
+    <div class="absolute -right-24 -top-24 h-96 w-96 rounded-full bg-white/10 blur-2xl"></div>
+    <div class="absolute -bottom-32 -left-20 h-96 w-96 rounded-full bg-electric-400/20 blur-3xl"></div>
+    <div class="relative">
+      <div class="inline-flex rounded-2xl bg-white px-5 py-3 shadow-lg"><img src="{% static 'images/relux-logo.png' %}" alt="RELUX ELECTRIC" class="h-12"></div>
+    </div>
+    <div class="relative max-w-md">
+      <h2 class="text-4xl font-extrabold leading-tight">QR-Based Lead Management for every charging station.</h2>
+      <p class="mt-4 text-white/80">Generate permanent station QR codes, capture enquiries from Google Lens and camera scans, and track every lead from scan to conversion.</p>
+      <div class="mt-8 grid grid-cols-3 gap-4 text-sm">
+        <div class="rounded-xl bg-white/10 p-4 backdrop-blur"><p class="text-2xl font-bold">1</p><p class="text-white/75">Scan</p></div>
+        <div class="rounded-xl bg-white/10 p-4 backdrop-blur"><p class="text-2xl font-bold">2</p><p class="text-white/75">Enquire</p></div>
+        <div class="rounded-xl bg-white/10 p-4 backdrop-blur"><p class="text-2xl font-bold">3</p><p class="text-white/75">Convert</p></div>
+      </div>
+    </div>
+    <p class="relative text-xs text-white/60">© {% now "Y" %} {{ site_settings.company_name }}</p>
+  </div>
+
+  <div class="flex w-full items-center justify-center px-6 py-12 lg:w-1/2">
+    <div class="w-full max-w-sm">
+      <img src="{% static 'images/relux-logo.png' %}" alt="RELUX ELECTRIC" class="mb-8 h-14 lg:hidden">
+      <h1 class="text-2xl font-bold text-slate-900">Welcome back</h1>
+      <p class="mt-1 text-sm text-slate-500">Sign in to the RELUX ELECTRIC admin dashboard.</p>
+
+      {% if lockout_message %}
+        <div class="mt-6 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ lockout_message }}</div>
+      {% elif form.non_field_errors %}
+        <div class="mt-6 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {% for e in form.non_field_errors %}{{ e }}{% endfor %}
+        </div>
+      {% endif %}
+
+      <form method="post" class="mt-6 space-y-5" data-once novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ next }}">
+        {% include "partials/field.html" with field=form.username %}
+        {% include "partials/field.html" with field=form.password %}
+        <button type="submit" class="btn-primary w-full !py-3" data-loading-text="Signing in…">Sign in</button>
+      </form>
+      <p class="mt-8 text-center text-xs text-slate-400">Authorised RELUX ELECTRIC personnel only. All access is logged.</p>
+    </div>
+  </div>
+</div>
+</body>
+</html>

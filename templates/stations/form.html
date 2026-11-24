@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}{% if is_create %}Add station{% else %}Edit station{% endif %}{% endblock %}
+{% block page_title %}{% if is_create %}Add charging station{% else %}Edit · {{ station.name }}{% endif %}{% endblock %}
+{% block content %}
+<form method="post" class="mx-auto max-w-4xl space-y-6" data-once novalidate>
+  {% csrf_token %}
+  {% if form.non_field_errors %}<div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{% for e in form.non_field_errors %}{{ e }} {% endfor %}</div>{% endif %}
+  <div class="card card-pad">
+    <div class="mb-5 flex items-center justify-between">
+      <h2 class="card-title">Station details</h2>
+      <span class="chip font-mono">{% if station %}{{ station.station_id }}{% else %}ID generated on save{% endif %}</span>
+    </div>
+    <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
+      <div class="md:col-span-2">
+        {% if is_create %}
+        <label class="label" for="location-filter">Find location</label>
+        <input id="location-filter" type="search" class="input mb-2" placeholder="Type to filter the location list…" data-filter-select="id_location">
+        {% endif %}
+        {% include "partials/field.html" with field=form.location %}
+      </div>
+      {% include "partials/field.html" with field=form.name wrapper_class="md:col-span-2" %}
+      {% include "partials/field.html" with field=form.address wrapper_class="md:col-span-2" %}
+      {% include "partials/field.html" with field=form.city %}
+      {% include "partials/field.html" with field=form.state %}
+      {% include "partials/field.html" with field=form.charger_type %}
+      {% include "partials/field.html" with field=form.charger_capacity_kw %}
+      {% include "partials/field.html" with field=form.status %}
+    </div>
+  </div>
+  {% if is_create %}
+  <div class="rounded-2xl border border-electric-200 bg-electric-50 p-4 text-sm text-electric-900">
+    A cryptographically secure, permanent QR code is generated automatically when you save. Its URL never changes, even if you edit the station later.
+  </div>
+  {% else %}
+  <div class="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
+    Permanent QR URL (unchanged by edits): <span class="font-mono text-xs text-slate-900 break-all">{{ station.qr_mapping.public_url }}</span>
+  </div>
+  {% endif %}
+  <div class="flex justify-end gap-2">
+    <a href="{% if station %}{{ station.get_absolute_url }}{% else %}{% url 'stations:list' %}{% endif %}" class="btn-light">Cancel</a>
+    <button type="submit" class="btn-primary">{% if is_create %}Create station &amp; QR{% else %}Save changes{% endif %}</button>
+  </div>
+</form>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+  document.querySelectorAll("[data-filter-select]").forEach(function (input) {
+    var select = document.getElementById(input.dataset.filterSelect);
+    if (!select) return;
+    var options = Array.prototype.slice.call(select.options);
+    input.addEventListener("input", function () {
+      var term = input.value.trim().toLowerCase();
+      var firstMatch = null;
+      options.forEach(function (opt) {
+        var match = !opt.value || opt.text.toLowerCase().indexOf(term) !== -1;
+        opt.hidden = !match;
+        if (match && opt.value && !firstMatch) firstMatch = opt;
+      });
+      if (term && firstMatch && (select.selectedOptions[0] || {}).hidden !== false) firstMatch.selected = true;
+    });
+  });
+})();
+</script>
+{% endblock %}

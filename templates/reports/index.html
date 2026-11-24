@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% load relux %}
+{% block title %}Reports &amp; Exports{% endblock %}
+{% block page_title %}Reports &amp; Exports{% endblock %}
+{% block content %}
+<div class="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+  <div>
+    <p class="text-sm text-slate-500">Every report is generated live from the database for <strong class="text-slate-900">{{ dr.label }}</strong>{% if request.user.is_manager %} and your assigned locations{% endif %}.</p>
+    <p class="mt-1 text-xs text-slate-400">{{ totals.scans }} scans · {{ totals.submissions }} submissions · {{ totals.leads }} leads · {{ totals.converted }} converted ({{ totals.conversion_rate|floatformat:2 }}%)</p>
+  </div>
+  {% include "analytics/_range_picker.html" %}
+</div>
+
+{% with q=dr.as_query %}
+<div class="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+  <div class="card card-pad md:col-span-2 xl:col-span-3 bg-gradient-to-r from-brand-50 to-electric-50">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h2 class="card-title">Complete management report</h2>
+        <p class="text-sm text-slate-600">One Excel workbook: summary, location performance, station performance, monthly trend and all leads for the selected period.</p>
+      </div>
+      <a href="?{{ q }}&report=full" class="btn-primary">Download workbook (.xlsx)</a>
+    </div>
+  </div>
+
+  <div class="card card-pad">
+    <h3 class="card-title">Station-wise performance</h3>
+    <p class="mt-1 text-sm text-slate-500">Scans, form visits, submissions, leads, conversions and conversion rate for every station.</p>
+    <div class="mt-4 flex gap-2"><a class="btn-blue btn-sm" href="?{{ q }}&report=station_performance&format=xlsx">Excel</a><a class="btn-light btn-sm" href="?{{ q }}&report=station_performance&format=csv">CSV</a></div>
+  </div>
+  <div class="card card-pad">
+    <h3 class="card-title">Location-wise performance</h3>
+    <p class="mt-1 text-sm text-slate-500">The same funnel metrics aggregated for each location.</p>
+    <div class="mt-4 flex gap-2"><a class="btn-blue btn-sm" href="?{{ q }}&report=location_performance&format=xlsx">Excel</a><a class="btn-light btn-sm" href="?{{ q }}&report=location_performance&format=csv">CSV</a></div>
+  </div>
+  <div class="card card-pad">
+    <h3 class="card-title">All leads</h3>
+    <p class="mt-1 text-sm text-slate-500">Every lead submitted in the period, with source station, location, QR token and status.</p>
+    <div class="mt-4 flex gap-2"><a class="btn-blue btn-sm" href="?{{ q }}&report=leads&format=xlsx">Excel</a><a class="btn-light btn-sm" href="?{{ q }}&report=leads&format=csv">CSV</a></div>
+  </div>
+  <div class="card card-pad">
+    <h3 class="card-title">Daily / weekly / monthly</h3>
+    <p class="mt-1 text-sm text-slate-500">Scans, leads and conversions grouped by time period.</p>
+    <div class="mt-4 flex flex-wrap gap-2">
+      <a class="btn-blue btn-sm" href="?{{ q }}&report=daily">Daily</a>
+      <a class="btn-blue btn-sm" href="?{{ q }}&report=weekly">Weekly</a>
+      <a class="btn-blue btn-sm" href="?{{ q }}&report=monthly">Monthly</a>
+      <a class="btn-light btn-sm" href="?{{ q }}&report=daily&format=csv">Daily CSV</a>
+    </div>
+  </div>
+  <div class="card card-pad">
+    <h3 class="card-title">City, state &amp; category</h3>
+    <p class="mt-1 text-sm text-slate-500">Lead counts and conversion by geography and enquiry type.</p>
+    <div class="mt-4 flex flex-wrap gap-2">
+      <a class="btn-blue btn-sm" href="?{{ q }}&report=city">City-wise</a>
+      <a class="btn-blue btn-sm" href="?{{ q }}&report=state">State-wise</a>
+      <a class="btn-blue btn-sm" href="?{{ q }}&report=category">Category-wise</a>
+    </div>
+  </div>
+  <div class="card card-pad">
+    <h3 class="card-title">QR scan log</h3>
+    <p class="mt-1 text-sm text-slate-500">Raw scan events with device, bot/repeat flags and funnel progress.</p>
+    <div class="mt-4 flex gap-2"><a class="btn-blue btn-sm" href="?{{ q }}&report=scans&format=xlsx">Excel</a><a class="btn-light btn-sm" href="?{{ q }}&report=scans&format=csv">CSV</a></div>
+  </div>
+</div>
+{% endwith %}
+
+<div class="card card-pad mt-6">
+  <h2 class="card-title">Filtered lead export</h2>
+  <p class="mb-4 text-sm text-slate-500">Export leads with specific filters (independent of the period above).</p>
+  <form method="get" action="{% url 'leads:export' %}" class="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-6">
+    <div><label class="label" for="f-location">Location</label><select id="f-location" name="location" class="input"><option value="">All</option>{% for l in locations %}<option value="{{ l.pk }}">{{ l.name }}</option>{% endfor %}</select></div>
+    <div><label class="label" for="f-category">Category</label><select id="f-category" name="category" class="input"><option value="">All</option>{% for v, l in categories %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
+    <div><label class="label" for="f-status">Status</label><select id="f-status" name="status" class="input"><option value="">All</option>{% for v, l in statuses %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
+    <div><label class="label" for="f-from">From</label><input id="f-from" type="date" name="date_from" class="input"></div>
+    <div><label class="label" for="f-to">To</label><input id="f-to" type="date" name="date_to" class="input"></div>
+    <div><label class="label" for="f-format">Format</label><select id="f-format" name="format" class="input"><option value="xlsx">Excel</option><option value="csv">CSV</option></select></div>
+    <div class="md:col-span-3 xl:col-span-6 flex justify-end"><button class="btn-primary">Export leads</button></div>
+  </form>
+</div>
+
+<div class="card card-pad mt-6">
+  <h2 class="card-title">Master data</h2>
+  <div class="mt-3 flex flex-wrap gap-2">
+    <a class="btn-light btn-sm" href="{% url 'locations:export' %}?format=xlsx">Locations (Excel)</a>
+    <a class="btn-light btn-sm" href="{% url 'locations:export' %}?format=csv">Locations (CSV)</a>
+    <a class="btn-light btn-sm" href="{% url 'stations:export' %}?format=xlsx">Stations + QR URLs (Excel)</a>
+    <a class="btn-light btn-sm" href="{% url 'stations:export' %}?format=csv">Stations + QR URLs (CSV)</a>
+    <a class="btn-light btn-sm" href="{% url 'qrcodes:list' %}">Bulk QR downloads (ZIP / PDF)</a>
+  </div>
+</div>
+{% endblock %}

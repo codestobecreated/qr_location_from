@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% load relux %}
+{% block title %}Analytics · {{ location.name }}{% endblock %}
+{% block page_title %}Location analytics{% endblock %}
+{% block content %}
+<div class="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+  <div>
+    <a href="{% url 'analytics:overview' %}?{{ dr.as_query }}" class="text-sm text-slate-500 hover:underline">← All analytics</a>
+    <h2 class="mt-1 text-2xl font-bold text-slate-900">{{ location.name }}</h2>
+    <p class="text-sm text-slate-500"><span class="font-mono">{{ location.location_id }}</span> · {{ location.city }}, {{ location.state }} · {{ dr.label }}</p>
+  </div>
+  <div class="flex flex-wrap items-end gap-2">
+    {% include "analytics/_range_picker.html" %}
+    <a class="btn-light" href="{% url 'locations:detail' location.pk %}">Location details</a>
+  </div>
+</div>
+
+{% include "analytics/_funnel.html" %}
+
+<div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
+  <div class="card card-pad xl:col-span-2">
+    <h3 class="card-title mb-4">Daily trend</h3>
+    <div class="h-72"><canvas id="trend-chart" data-chart="trend" data-source="trend-data" role="img" aria-label="Daily trend"></canvas></div>
+    {{ chart|json_script:"trend-data" }}
+  </div>
+  <div class="card card-pad">
+    <h3 class="card-title mb-4">Enquiry categories</h3>
+    <div class="h-72"><canvas id="category-chart" data-chart="doughnut" data-source="category-data" role="img" aria-label="Categories"></canvas></div>
+    {{ category_chart|json_script:"category-data" }}
+  </div>
+</div>
+
+<div class="card mt-6">
+  <div class="p-5"><h3 class="card-title">Stations at this location</h3></div>
+  {% include "analytics/_metrics_table.html" with rows=stations kind="station" sort_param="ssort" %}
+</div>
+
+<div class="card mt-6">
+  <div class="flex items-center justify-between p-5"><h3 class="card-title">Leads in this period</h3><a class="link text-sm" href="{% url 'leads:list' %}?location={{ location.pk }}{% if dr.start %}&date_from={{ dr.start|date:'Y-m-d' }}&date_to={{ dr.end|date:'Y-m-d' }}{% endif %}">Open in Lead Management →</a></div>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Lead</th><th>Customer</th><th>Category</th><th>Station</th><th>Submitted</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for lead in recent_leads %}
+      <tr><td><a class="link font-mono text-xs" href="{{ lead.get_absolute_url }}">{{ lead.lead_id }}</a></td>
+        <td>{{ lead.full_name }}<div class="text-xs text-slate-500">{{ lead.mobile }}</div></td>
+        <td class="text-xs">{{ lead.get_category_display }}</td><td class="text-xs">{{ lead.station_name }}</td>
+        <td class="text-xs">{{ lead.submitted_at|date:"d M Y, H:i" }}</td><td>{% badge lead.status lead.get_status_display %}</td></tr>
+    {% empty %}
+      <tr><td colspan="6" class="py-10 text-center text-slate-500">No leads in this period.</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+</div>
+{% endblock %}
+{% block extra_js %}{% include "partials/chart_js.html" %}{% endblock %}

@@ -1,0 +1,16 @@
+{# Date range selector. Context: dr, presets #}
+<form method="get" class="flex flex-wrap items-end gap-2">
+  {% for key, value in request.GET.items %}{% if key not in "range,start,end,page" %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endif %}{% endfor %}
+  <div>
+    <label for="range" class="label">Period</label>
+    <select id="range" name="range" class="input !w-auto" onchange="document.getElementById('custom-range').classList.toggle('hidden', this.value !== 'custom'); if (this.value !== 'custom') this.form.submit();">
+      {% for key, label, days in presets %}<option value="{{ key }}" {% if dr.key == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      <option value="custom" {% if dr.key == 'custom' %}selected{% endif %}>Custom range…</option>
+    </select>
+  </div>
+  <div id="custom-range" class="flex items-end gap-2 {% if dr.key != 'custom' %}hidden{% endif %}">
+    <div><label for="start" class="label">From</label><input id="start" type="date" name="start" value="{{ dr.start|date:'Y-m-d' }}" class="input"></div>
+    <div><label for="end" class="label">To</label><input id="end" type="date" name="end" value="{{ dr.end|date:'Y-m-d' }}" class="input"></div>
+    <button class="btn-blue">Apply</button>
+  </div>
+</form>

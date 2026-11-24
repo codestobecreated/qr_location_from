@@ -1,0 +1,80 @@
+{% extends "customer/base_public.html" %}
+{% load static %}
+{% block title %}Enquire at {{ station.name }}{% endblock %}
+{% block content %}
+{% include "customer/_station_card.html" %}
+
+<section class="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+  <h2 class="text-xl font-bold text-slate-900">{{ settings_obj.enquiry_heading }}</h2>
+  {% if settings_obj.enquiry_intro %}<p class="mt-1 text-sm text-slate-500">{{ settings_obj.enquiry_intro }}</p>{% endif %}
+
+  {% if rate_limited %}
+    <div class="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">We have received many enquiries from your network. Please try again in a little while.</div>
+  {% elif form.errors %}
+    <div class="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700" role="alert">Please correct the highlighted fields and submit again.</div>
+  {% endif %}
+
+  <form method="post" action="{{ request.get_full_path }}" class="mt-5 space-y-4" id="enquiry-form" data-once novalidate>
+    {% csrf_token %}
+    {{ form.submission_key }}
+    <div class="absolute -left-[9999px]" aria-hidden="true"><label for="{{ form.website.id_for_label }}">Leave this field empty</label>{{ form.website }}</div>
+    {% include "partials/field.html" with field=form.full_name %}
+    {% include "partials/field.html" with field=form.mobile %}
+    {% include "partials/field.html" with field=form.email %}
+    {% include "partials/field.html" with field=form.category %}
+    {% include "partials/field.html" with field=form.message %}
+    <div class="{% if form.consent.errors %}has-error{% endif %} rounded-xl bg-slate-50 p-3">
+      <label class="flex items-start gap-3 text-sm text-slate-700">
+        {{ form.consent }}
+        <span>I agree to the <a href="{% url 'public:privacy' %}" target="_blank" rel="noopener" class="link">Privacy Policy</a> and consent to {{ site_settings.company_name }} contacting me about this enquiry. <span class="text-rose-500">*</span></span>
+      </label>
+      {% for e in form.consent.errors %}<p class="error">You must accept the Privacy Policy to submit.</p>{% endfor %}
+    </div>
+    <button type="submit" class="btn-primary w-full !py-3.5 text-base shadow-glow" data-loading-text="Submitting…">Submit enquiry</button>
+    <p class="text-center text-xs text-slate-400">Your enquiry is linked to this charging station automatically.</p>
+  </form>
+</section>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+  // Funnel tracking: tell the server the form was actually displayed in a real browser.
+  var csrf = document.querySelector("#enquiry-form input[name=csrfmiddlewaretoken]");
+  try {
+    fetch("{% url 'public:form_viewed' token=mapping.token %}", {
+      method: "POST", credentials: "same-origin", keepalive: true,
+      headers: { "X-CSRFToken": csrf ? csrf.value : "", "X-Requested-With": "fetch" }
+    });
+  } catch (e) {}
+
+  // Lightweight client-side validation assistance (server validation is authoritative).
+  var form = document.getElementById("enquiry-form");
+  var mobile = document.getElementById("id_mobile");
+  if (mobile) {
+    mobile.addEventListener("input", function () {
+      var d = mobile.value.replace(/\D/g, "");
+      mobile.setCustomValidity(/^(?:91|0)?[6-9]\d{9}$/.test(d) || !d ? "" : "Enter a valid 10-digit mobile number");
+    });
+  }
+  form.addEventListener("submit", function (e) {
+    var required = ["id_full_name", "id_mobile", "id_category"];
+    var firstBad = null;
+    required.forEach(function (id) {
+      var el = document.getElementById(id);
+      var bad = el && !el.value.trim();
+      if (el) el.closest("div").classList.toggle("has-error", !!bad);
+      if (bad && !firstBad) firstBad = el;
+    });
+    var consent = document.getElementById("id_consent");
+    if (consent && !consent.checked && !firstBad) firstBad = consent;
+    if (firstBad) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      firstBad.focus();
+      firstBad.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, true);
+})();
+</script>
+<script src="{% static 'js/app.js' %}"></script>
+{% endblock %}

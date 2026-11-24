@@ -1,0 +1,39 @@
+{# Metric rows (stations or locations). Context: rows, kind ("station"/"location"), sort_param #}
+{% load relux %}
+<div class="table-wrap">
+  <table class="table">
+    <thead><tr>
+      <th><a href="?{% if sort_param == 'ssort' %}{% url_replace ssort='name' page='' %}{% else %}{% url_replace lsort='name' page='' %}{% endif %}">{% if kind == "station" %}Station{% else %}Location{% endif %}</a></th>
+      <th>City / State</th>
+      {% for key, label in metric_cols %}
+      <th class="text-right"><a href="?{% if sort_param == 'ssort' %}{% url_replace ssort='-'|add:key page='' %}{% else %}{% url_replace lsort='-'|add:key page='' %}{% endif %}">{{ label }}</a></th>
+      {% endfor %}
+      <th></th>
+    </tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>
+          {% if kind == "station" %}
+            <a class="link" href="{% url 'analytics:station' r.pk %}{% if dr %}?{{ dr.as_query }}{% endif %}">{{ r.name }}</a>
+            <div class="text-xs text-slate-500">{{ r.location.name }} · <span class="font-mono">{{ r.station_id }}</span></div>
+          {% else %}
+            <a class="link" href="{% url 'analytics:location' r.pk %}{% if dr %}?{{ dr.as_query }}{% endif %}">{{ r.name }}</a>
+            <div class="font-mono text-xs text-slate-500">{{ r.location_id }}</div>
+          {% endif %}
+        </td>
+        <td class="text-xs">{{ r.city }}<div class="text-slate-500">{{ r.state }}</div></td>
+        <td class="text-right tabular-nums">{{ r.m_scans }}</td>
+        <td class="text-right tabular-nums">{{ r.m_form_views }}</td>
+        <td class="text-right tabular-nums">{{ r.m_submissions }}</td>
+        <td class="text-right tabular-nums font-semibold">{{ r.m_leads }}</td>
+        <td class="text-right tabular-nums text-brand-700">{{ r.m_converted }}</td>
+        <td class="text-right tabular-nums">{{ r.m_rate|floatformat:2 }}%</td>
+        <td class="w-28"><div class="bar-track"><div class="bar-fill" style="width: {{ r.m_rate|floatformat:0 }}%"></div></div></td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="9" class="py-12 text-center text-slate-500">No data.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>

@@ -1,0 +1,12 @@
+{% extends "customer/base_public.html" %}
+{% block title %}Privacy Policy{% endblock %}
+{% block content %}
+<section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+  <h1 class="text-xl font-bold text-slate-900">Privacy Policy</h1>
+  <div class="mt-4 space-y-3 whitespace-pre-line text-sm leading-relaxed text-slate-700">{{ settings_obj.privacy_policy }}</div>
+  {% if site_settings.support_email or site_settings.support_phone %}
+  <p class="mt-6 text-sm text-slate-600">Contact: {% if site_settings.support_email %}<a class="link" href="mailto:{{ site_settings.support_email }}">{{ site_settings.support_email }}</a>{% endif %} {% if site_settings.support_phone %}· {{ site_settings.support_phone }}{% endif %}</p>
+  {% endif %}
+  <button type="button" onclick="history.back()" class="btn-light mt-6">Back</button>
+</section>
+{% endblock %}

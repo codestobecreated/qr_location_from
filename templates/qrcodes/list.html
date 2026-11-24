@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% load relux humanize %}
+{% block title %}QR Code Management{% endblock %}
+{% block page_title %}QR Code Management{% endblock %}
+{% block content %}
+<div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+  <div class="stat-card"><span class="stat-label">Total QR codes</span><span class="stat-value">{{ totals.total|intcomma }}</span><span class="text-xs text-slate-500">One permanent code per station</span></div>
+  <div class="stat-card"><span class="stat-label">Active (accepting enquiries)</span><span class="stat-value text-brand-700">{{ totals.active|intcomma }}</span></div>
+  <div class="stat-card"><span class="stat-label">Inactive</span><span class="stat-value text-slate-500">{{ totals.inactive|intcomma }}</span></div>
+</div>
+
+<div class="card">
+  <form method="get" class="grid grid-cols-1 gap-3 border-b border-slate-100 p-4 md:grid-cols-6">
+    <div class="md:col-span-2"><label class="label" for="q">Search</label>
+      <input id="q" type="search" name="q" value="{{ filters.q }}" class="input" placeholder="Station, ID, location or token"></div>
+    <div class="md:col-span-2"><label class="label" for="location">Location</label>
+      <select id="location" name="location" class="input" data-autosubmit><option value="">All locations</option>
+        {% for l in locations %}<option value="{{ l.pk }}" {% if filters.location == l.pk|stringformat:"d" %}selected{% endif %}>{{ l.name }} ({{ l.location_id }})</option>{% endfor %}</select></div>
+    <div><label class="label" for="state">State</label>
+      <select id="state" name="state" class="input" data-autosubmit><option value="">All</option>
+        {% for s in states %}<option value="{{ s }}" {% if filters.state|lower == s|lower %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></div>
+    <div><label class="label" for="qr_status">QR status</label>
+      <select id="qr_status" name="qr_status" class="input" data-autosubmit><option value="">All</option>
+        <option value="active" {% if filters.qr_status == 'active' %}selected{% endif %}>Active</option>
+        <option value="inactive" {% if filters.qr_status == 'inactive' %}selected{% endif %}>Inactive</option></select></div>
+    <div class="md:col-span-6 flex flex-wrap justify-end gap-2">
+      <a href="{% url 'qrcodes:list' %}" class="btn-light">Reset</a><button class="btn-blue">Filter</button>
+    </div>
+  </form>
+
+  <form method="post" action="{% url 'qrcodes:bulk_download' %}" id="bulk-qr-form">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    {% for key, value in filters.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+    <div class="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/60 px-4 py-3 text-sm lg:flex-row lg:items-center lg:justify-between">
+      <div class="flex flex-wrap items-center gap-3">
+        <label class="inline-flex items-center gap-2"><input type="radio" name="scope" value="selected" checked class="text-brand-600"> Selected (<span data-selection-count="ids">0</span>)</label>
+        <label class="inline-flex items-center gap-2"><input type="radio" name="scope" value="filtered" class="text-brand-600"> All {{ page.paginator.count|intcomma }} matching filters</label>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <button type="submit" name="format" value="zip" class="btn-blue btn-sm">Download ZIP (PNG)</button>
+        <label for="per_page_pdf" class="sr-only">QR codes per PDF page</label>
+        <select id="per_page_pdf" name="per_page" class="input !w-auto !py-1.5 text-xs">
+          <option value="1">1 per A4 page (poster)</option><option value="2">2 per page</option>
+          <option value="4" selected>4 per page</option><option value="6">6 per page</option>
+        </select>
+        <button type="submit" name="format" value="pdf" class="btn-green btn-sm">Download print PDF</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr>
+          <th class="w-8"><input type="checkbox" data-select-all="ids" aria-label="Select all on page" class="rounded border-slate-300"></th>
+          <th>QR</th><th>Station</th><th>Location</th><th>Token</th><th>Scans</th><th>Status</th><th class="text-right">Download</th>
+        </tr></thead>
+        <tbody>
+        {% for m in page %}
+          <tr>
+            <td><input type="checkbox" name="ids" value="{{ m.pk }}" class="rounded border-slate-300" aria-label="Select {{ m.station.name }}"></td>
+            <td><a href="{% url 'qrcodes:detail' m.pk %}"><img src="{% url 'qrcodes:thumb' m.pk %}" alt="QR for {{ m.station.name }}" class="h-14 w-14 max-w-none shrink-0 rounded border border-slate-200" loading="lazy"></a></td>
+            <td class="min-w-[12rem]"><a class="link" href="{% url 'qrcodes:detail' m.pk %}">{{ m.station.name }}</a><div class="font-mono text-xs text-slate-500">{{ m.station.station_id }}</div></td>
+            <td class="min-w-[10rem] text-xs">{{ m.station.location.name }}<div class="text-slate-500">{{ m.station.city }}, {{ m.station.state }}</div></td>
+            <td class="font-mono text-xs text-slate-600">{{ m.token|truncatechars:14 }}</td>
+            <td class="tabular-nums">{{ m.scan_count }}</td>
+            <td>
+              {% with st=m.effective_status %}
+              {% if st == "active" %}{% badge "active" "Active" %}{% elif st == "inactive" %}{% badge "inactive" "QR Inactive" %}{% else %}{% badge "station_inactive" "Station inactive" %}{% endif %}
+              {% endwith %}
+            </td>
+            <td class="whitespace-nowrap text-right">
+              <a class="btn-light btn-sm" href="{% url 'qrcodes:png' m.pk %}">PNG</a>
+              <a class="btn-light btn-sm" href="{% url 'qrcodes:pdf' m.pk %}">PDF</a>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8" class="py-16 text-center text-slate-500">No QR codes found. QR codes are created automatically for every charging station.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+  {% include "partials/pagination.html" %}
+</div>
+{% if request.user.is_super_admin %}
+<form method="post" action="{% url 'qrcodes:refresh_images' %}" class="mt-4 text-right" data-confirm="Re-render printed QR images whose labels are out of date? Tokens and URLs never change." data-confirm-style="primary">
+  {% csrf_token %}<button class="btn-ghost btn-sm">Refresh out-of-date QR images</button>
+</form>
+{% endif %}
+{% endblock %}

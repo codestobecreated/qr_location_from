@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block page_title %}Settings{% endblock %}
+{% block content %}
+<div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
+  <div class="space-y-6 xl:col-span-1">
+    <div class="card card-pad">
+      <h2 class="card-title">My profile</h2>
+      <p class="mb-4 text-sm text-slate-500">Signed in as <strong>@{{ request.user.username }}</strong> · {{ request.user.role_label }}</p>
+      <form method="post" class="space-y-4" data-once>
+        {% csrf_token %}<input type="hidden" name="section" value="profile">
+        {% for field in profile_form %}{% include "partials/field.html" %}{% endfor %}
+        <div class="flex flex-wrap justify-end gap-2">
+          <a href="{% url 'accounts:password_change' %}" class="btn-light">Change password</a>
+          <button class="btn-primary" type="submit">Save profile</button>
+        </div>
+      </form>
+    </div>
+    {% if request.user.is_super_admin %}
+    <div class="card card-pad">
+      <h2 class="card-title mb-3">System information</h2>
+      <dl>
+        <div class="dl-row"><dt>QR base URL</dt><dd class="font-mono text-xs">{{ qr_base_url }}</dd></div>
+        <div class="dl-row"><dt>QR URL format</dt><dd class="font-mono text-xs">{{ qr_base_url }}/q/&lt;token&gt;/</dd></div>
+        <div class="dl-row"><dt>Database</dt><dd>SQLite</dd></div>
+        <div class="dl-row"><dt>Debug mode</dt><dd>{% if debug %}<span class="text-amber-700">On (development)</span>{% else %}Off{% endif %}</dd></div>
+      </dl>
+      <p class="help mt-3">The QR base URL is set with the <code>QR_BASE_URL</code> environment variable. Changing it refreshes printed QR images but never changes a station's token.</p>
+      <div class="mt-4 flex flex-wrap gap-2">
+        <a class="btn-light btn-sm" href="{% url 'accounts:audit_log' %}">View audit log</a>
+        <a class="btn-light btn-sm" href="{% url 'admin:index' %}">Django admin</a>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if system_form %}
+  <div class="card card-pad xl:col-span-2">
+    <h2 class="card-title">Business &amp; enquiry form settings</h2>
+    <p class="mb-5 text-sm text-slate-500">These values appear on the public QR enquiry pages.</p>
+    <form method="post" class="space-y-5" data-once novalidate>
+      {% csrf_token %}<input type="hidden" name="section" value="system">
+      <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
+        {% include "partials/field.html" with field=system_form.company_name %}
+        {% include "partials/field.html" with field=system_form.website_url %}
+        {% include "partials/field.html" with field=system_form.support_email %}
+        {% include "partials/field.html" with field=system_form.support_phone %}
+        {% include "partials/field.html" with field=system_form.enquiry_heading wrapper_class="md:col-span-2" %}
+        {% include "partials/field.html" with field=system_form.enquiry_intro wrapper_class="md:col-span-2" %}
+        {% include "partials/field.html" with field=system_form.thank_you_message wrapper_class="md:col-span-2" %}
+        {% include "partials/field.html" with field=system_form.privacy_policy wrapper_class="md:col-span-2" %}
+        {% include "partials/field.html" with field=system_form.duplicate_window_minutes %}
+        {% include "partials/field.html" with field=system_form.max_submissions_per_hour %}
+      </div>
+      <div class="flex justify-end"><button class="btn-primary" type="submit">Save settings</button></div>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

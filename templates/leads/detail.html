@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% load relux %}
+{% block title %}{{ lead.lead_id }}{% endblock %}
+{% block page_title %}Lead {{ lead.lead_id }}{% endblock %}
+{% block content %}
+<div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+  <div>
+    <div class="flex flex-wrap items-center gap-2">
+      <h2 class="text-2xl font-bold text-slate-900">{{ lead.full_name }}</h2>
+      {% badge lead.status lead.get_status_display %}
+      {% if lead.is_duplicate %}<span class="chip">Duplicate of <a class="link ml-1" href="{{ lead.duplicate_of.get_absolute_url }}">{{ lead.duplicate_of.lead_id }}</a></span>{% endif %}
+    </div>
+    <p class="mt-1 text-sm text-slate-500">{{ lead.get_category_display }} · submitted {{ lead.submitted_at|date:"d M Y, h:i A" }} ({{ lead.submitted_at|timesince }} ago)</p>
+  </div>
+  <div class="flex gap-2">
+    <a class="btn-blue" href="tel:{{ lead.mobile }}">Call {{ lead.mobile }}</a>
+    <a class="btn-green" href="https://wa.me/91{{ lead.mobile }}" target="_blank" rel="noopener">WhatsApp</a>
+    {% if lead.email %}<a class="btn-light" href="mailto:{{ lead.email }}">Email</a>{% endif %}
+  </div>
+</div>
+
+<div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
+  <div class="space-y-6 xl:col-span-2">
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div class="card card-pad">
+        <h3 class="card-title mb-3">Customer enquiry</h3>
+        <dl>
+          <div class="dl-row"><dt>Full name</dt><dd>{{ lead.full_name }}</dd></div>
+          <div class="dl-row"><dt>Mobile</dt><dd>{{ lead.mobile }}</dd></div>
+          <div class="dl-row"><dt>Email</dt><dd>{{ lead.email|default:"—" }}</dd></div>
+          <div class="dl-row"><dt>Category</dt><dd>{{ lead.get_category_display }}</dd></div>
+          <div class="dl-row"><dt>Privacy consent</dt><dd>{% if lead.consent %}Yes · {{ lead.consent_at|date:"d M Y, H:i" }}{% else %}No{% endif %}</dd></div>
+        </dl>
+        <p class="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Message</p>
+        <p class="mt-1 whitespace-pre-line rounded-xl bg-slate-50 p-3 text-sm text-slate-700">{{ lead.message|default:"No message provided." }}</p>
+      </div>
+      <div class="card card-pad">
+        <div class="mb-3 flex items-center justify-between"><h3 class="card-title">Source (locked)</h3><span class="chip" title="Captured from the QR token at submission. Cannot be edited.">🔒 Permanent</span></div>
+        <dl>
+          {% if request.user.is_staff_member %}
+          <div class="dl-row"><dt>Location</dt><dd>{{ lead.location_name }}</dd></div>
+          <div class="dl-row"><dt>Location ID</dt><dd class="font-mono text-xs">{{ lead.location_code }}</dd></div>
+          <div class="dl-row"><dt>Station</dt><dd>{{ lead.station_name }}</dd></div>
+          {% else %}
+          <div class="dl-row"><dt>Location</dt><dd><a class="link" href="{% url 'locations:detail' lead.location_id %}">{{ lead.location_name }}</a></dd></div>
+          <div class="dl-row"><dt>Location ID</dt><dd class="font-mono text-xs">{{ lead.location_code }}</dd></div>
+          <div class="dl-row"><dt>Station</dt><dd><a class="link" href="{% url 'stations:detail' lead.station_id %}">{{ lead.station_name }}</a></dd></div>
+          {% endif %}
+          <div class="dl-row"><dt>Station ID</dt><dd class="font-mono text-xs">{{ lead.station_code }}</dd></div>
+          <div class="dl-row"><dt>City / State</dt><dd>{{ lead.source_city }}, {{ lead.source_state }}</dd></div>
+          <div class="dl-row"><dt>QR token</dt><dd class="font-mono text-[11px] break-all">{{ lead.qr_token }}</dd></div>
+          <div class="dl-row"><dt>Submitted</dt><dd>{{ lead.submitted_at|date:"d M Y" }} at {{ lead.submitted_at|date:"h:i:s A" }}</dd></div>
+          <div class="dl-row"><dt>Device</dt><dd>{{ lead.device_type|default:"—" }} · {{ lead.os|default:"—" }} · {{ lead.browser|default:"—" }}</dd></div>
+          {% if lead.utm_source or lead.utm_campaign %}<div class="dl-row"><dt>UTM</dt><dd class="text-xs">{{ lead.utm_source }} / {{ lead.utm_medium }} / {{ lead.utm_campaign }}</dd></div>{% endif %}
+        </dl>
+      </div>
+    </div>
+
+    <div class="card card-pad" id="notes">
+      <h3 class="card-title mb-4">Follow-up notes</h3>
+      <form method="post" action="{% url 'leads:add_note' lead.pk %}" class="grid grid-cols-1 gap-3 md:grid-cols-4" data-once>
+        {% csrf_token %}
+        <div class="md:col-span-3">{% include "partials/field.html" with field=note_form.note %}</div>
+        <div>{% include "partials/field.html" with field=note_form.follow_up_at %}</div>
+        <div class="md:col-span-4 flex justify-end"><button class="btn-primary btn-sm" type="submit">Add note</button></div>
+      </form>
+      <ul class="mt-5 space-y-3">
+        {% for n in notes %}
+        <li class="rounded-xl border border-slate-100 bg-slate-50 p-3">
+          <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+            <span><strong class="text-slate-700">{{ n.author.display_name|default:"Deleted user" }}</strong> · {{ n.created_at|date:"d M Y, h:i A" }}</span>
+            {% if n.follow_up_at %}<span class="chip !bg-amber-100 !text-amber-800">Follow up {{ n.follow_up_at|date:"d M Y, h:i A" }}</span>{% endif %}
+          </div>
+          <p class="mt-1 whitespace-pre-line text-sm text-slate-800">{{ n.note }}</p>
+        </li>
+        {% empty %}
+        <li class="text-sm text-slate-500">No notes yet.</li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    {% if previous_leads or duplicates %}
+    <div class="card">
+      <div class="p-5"><h3 class="card-title">Other enquiries from {{ lead.mobile }}</h3></div>
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Lead</th><th>Station</th><th>Category</th><th>Submitted</th><th>Status</th></tr></thead>
+        <tbody>
+        {% for o in previous_leads %}
+          <tr><td><a class="link font-mono text-xs" href="{{ o.get_absolute_url }}">{{ o.lead_id }}</a>{% if o.is_duplicate %} <span class="chip !py-0 !text-[10px]">Dup</span>{% endif %}</td>
+            <td class="text-xs">{{ o.station_name }}</td><td class="text-xs">{{ o.get_category_display }}</td>
+            <td class="text-xs">{{ o.submitted_at|date:"d M Y, H:i" }}</td><td>{% badge o.status o.get_status_display %}</td></tr>
+        {% endfor %}
+        </tbody></table></div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="space-y-6">
+    <div class="card card-pad">
+      <h3 class="card-title mb-4">Update status</h3>
+      <form method="post" action="{% url 'leads:update_status' lead.pk %}" class="space-y-3" data-once>
+        {% csrf_token %}
+        {% include "partials/field.html" with field=status_form.status %}
+        {% include "partials/field.html" with field=status_form.note %}
+        <button class="btn-primary w-full" type="submit">Save status</button>
+      </form>
+    </div>
+
+    <div class="card card-pad">
+      <h3 class="card-title mb-1">Assignment</h3>
+      <p class="mb-4 text-sm text-slate-500">Currently: <strong class="text-slate-900">{{ lead.assigned_to.display_name|default:"Unassigned" }}</strong></p>
+      {% if assign_form %}
+      <form method="post" action="{% url 'leads:assign' lead.pk %}" class="space-y-3" data-once>
+        {% csrf_token %}
+        {% include "partials/field.html" with field=assign_form.assigned_to %}
+        {% include "partials/field.html" with field=assign_form.note %}
+        <button class="btn-light w-full" type="submit">Assign</button>
+      </form>
+      {% endif %}
+      {% if assignments %}
+      <ul class="mt-4 space-y-2 border-t border-slate-100 pt-4 text-xs text-slate-600">
+        {% for a in assignments %}<li>{{ a.assigned_at|date:"d M Y, H:i" }} – {{ a.assigned_by.display_name|default:"System" }} → <strong>{{ a.assigned_to.display_name|default:"Unassigned" }}</strong>{% if a.note %} · {{ a.note }}{% endif %}</li>{% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+
+    <div class="card card-pad">
+      <h3 class="card-title mb-4">Status history</h3>
+      <ol class="relative space-y-4 border-l border-slate-200 pl-5">
+        {% for h in history %}
+        <li>
+          <span class="absolute -left-1.5 mt-1.5 h-3 w-3 rounded-full border-2 border-white bg-brand-500"></span>
+          <p class="text-sm"><span class="text-slate-500">{{ h.get_from_status_display|default:"—" }}</span> → <strong>{{ h.get_to_status_display }}</strong></p>
+          <p class="text-xs text-slate-500">{{ h.changed_at|date:"d M Y, h:i A" }} · {{ h.changed_by.display_name|default:"Customer / System" }}</p>
+          {% if h.note %}<p class="mt-1 text-xs text-slate-700">{{ h.note }}</p>{% endif %}
+        </li>
+        {% endfor %}
+      </ol>
+    </div>
+  </div>
+</div>
+{% endblock %}

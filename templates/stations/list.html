@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% load relux humanize %}
+{% block title %}Charging Stations{% endblock %}
+{% block page_title %}Charging Stations{% endblock %}
+{% block content %}
+<div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+  <div class="flex flex-wrap gap-3">
+    <div class="chip !bg-white ring-1 ring-slate-200">Total <strong class="ml-1">{{ totals.total|intcomma }}</strong></div>
+    <div class="chip !bg-emerald-50 !text-emerald-700">Active <strong class="ml-1">{{ totals.active|intcomma }}</strong></div>
+    {% if selected_location %}<div class="chip !bg-electric-50 !text-electric-800">Location: {{ selected_location.name }} <a href="?{% url_replace location='' page='' %}" class="ml-1" aria-label="Clear location filter">✕</a></div>{% endif %}
+  </div>
+  <div class="flex flex-wrap gap-2">
+    <a class="btn-light" href="{% url 'stations:export' %}?{% url_replace format='csv' page='' %}">Export CSV</a>
+    <a class="btn-light" href="{% url 'stations:export' %}?{% url_replace format='xlsx' page='' %}">Export Excel</a>
+    {% if request.user.is_super_admin %}
+    <a class="btn-light" href="{% url 'stations:import' %}">Import Excel/CSV</a>
+    <a class="btn-primary" href="{% url 'stations:create' %}{% if selected_location %}?location={{ selected_location.pk }}{% endif %}">+ Add station</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <form method="get" class="grid grid-cols-1 gap-3 border-b border-slate-100 p-4 md:grid-cols-4 xl:grid-cols-8">
+    <input type="hidden" name="sort" value="{{ request.GET.sort }}">
+    <div class="md:col-span-2"><label class="label" for="q">Search</label>
+      <input id="q" type="search" name="q" value="{{ filters.q }}" class="input" placeholder="Station, ID, location…"></div>
+    <div class="md:col-span-2"><label class="label" for="location">Location</label>
+      <select id="location" name="location" class="input" data-autosubmit><option value="">All locations</option>
+        {% for l in locations %}<option value="{{ l.pk }}" {% if filters.location == l.pk|stringformat:"d" %}selected{% endif %}>{{ l.name }} ({{ l.location_id }})</option>{% endfor %}</select></div>
+    <div><label class="label" for="state">State</label>
+      <select id="state" name="state" class="input" data-autosubmit><option value="">All</option>
+        {% for s in states %}<option value="{{ s }}" {% if filters.state|lower == s|lower %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></div>
+    <div><label class="label" for="city">City</label>
+      <select id="city" name="city" class="input" data-autosubmit><option value="">All</option>
+        {% for c in cities %}<option value="{{ c }}" {% if filters.city|lower == c|lower %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></div>
+    <div><label class="label" for="status">Status</label>
+      <select id="status" name="status" class="input" data-autosubmit><option value="">All</option>
+        {% for v, l in statuses %}<option value="{{ v }}" {% if filters.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+    <div><label class="label" for="charger_type">Charger</label>
+      <select id="charger_type" name="charger_type" class="input" data-autosubmit><option value="">All</option>
+        {% for v, l in charger_types %}<option value="{{ v }}" {% if filters.charger_type == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+    <div class="flex items-end gap-2 md:col-span-4 xl:col-span-8 justify-end"><button class="btn-blue" type="submit">Filter</button><a href="{% url 'stations:list' %}" class="btn-light">Reset</a></div>
+  </form>
+
+  <form method="post" action="{% url 'stations:bulk_status' %}">
+    {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+    {% if request.user.is_super_admin %}
+    <div class="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-4 py-2 text-sm">
+      <span class="text-slate-500"><span data-selection-count="ids">0</span> selected</span>
+      <select name="status" class="input !w-auto !py-1.5 text-xs">{% for v, l in statuses %}<option value="{{ v }}">Set {{ l }}</option>{% endfor %}</select>
+      <button type="submit" class="btn-light btn-sm">Apply to selected</button>
+    </div>
+    {% endif %}
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr>
+          {% if request.user.is_super_admin %}<th class="w-8"><input type="checkbox" data-select-all="ids" aria-label="Select all" class="rounded border-slate-300"></th>{% endif %}
+          <th><a href="?{% sort_link 'station_id' %}">ID {% sort_icon 'station_id' %}</a></th>
+          <th><a href="?{% sort_link 'name' %}">Station {% sort_icon 'name' %}</a></th>
+          <th><a href="?{% sort_link 'location' %}">Location {% sort_icon 'location' %}</a></th>
+          <th><a href="?{% sort_link 'city' %}">City / State {% sort_icon 'city' %}</a></th>
+          <th><a href="?{% sort_link 'capacity' %}">Charger {% sort_icon 'capacity' %}</a></th>
+          <th><a href="?{% sort_link 'leads' %}">Leads {% sort_icon 'leads' %}</a></th>
+          <th>QR</th>
+          <th><a href="?{% sort_link 'status' %}">Status {% sort_icon 'status' %}</a></th>
+          <th class="text-right">Actions</th>
+        </tr></thead>
+        <tbody>
+        {% for s in page %}
+          <tr>
+            {% if request.user.is_super_admin %}<td><input type="checkbox" name="ids" value="{{ s.pk }}" class="rounded border-slate-300" aria-label="Select {{ s.name }}"></td>{% endif %}
+            <td class="font-mono text-xs">{{ s.station_id }}</td>
+            <td><a class="link" href="{{ s.get_absolute_url }}">{{ s.name }}</a></td>
+            <td class="text-xs"><a class="hover:underline" href="{{ s.location.get_absolute_url }}">{{ s.location.name }}</a><div class="font-mono text-slate-500">{{ s.location.location_id }}</div></td>
+            <td class="text-xs">{{ s.city }}<div class="text-slate-500">{{ s.state }}</div></td>
+            <td class="text-xs">{{ s.get_charger_type_display }}<div class="text-slate-500">{{ s.capacity_display }}</div></td>
+            <td class="tabular-nums">{{ s.lead_count }}</td>
+            <td><a href="{% url 'qrcodes:detail' s.qr_mapping.pk %}" class="inline-flex items-center gap-2" title="Open QR code">
+              <img src="{% url 'qrcodes:thumb' s.qr_mapping.pk %}" alt="QR for {{ s.name }}" class="h-10 w-10 max-w-none shrink-0 rounded border border-slate-200" loading="lazy">
+              {% if s.qr_mapping.is_active %}<span class="h-2 w-2 rounded-full bg-emerald-500" title="QR active"></span>{% else %}<span class="h-2 w-2 rounded-full bg-slate-400" title="QR inactive"></span>{% endif %}
+            </a></td>
+            <td>{% badge s.status s.get_status_display %}</td>
+            <td class="whitespace-nowrap text-right">
+              <a class="btn-light btn-sm" href="{{ s.get_absolute_url }}">View</a>
+              {% if request.user.is_super_admin %}<a class="btn-light btn-sm" href="{% url 'stations:edit' s.pk %}">Edit</a>{% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="10" class="py-16 text-center text-slate-500">No charging stations found.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+  {% include "partials/pagination.html" %}
+</div>
+{% endblock %}

@@ -1,0 +1,33 @@
+/* Small non-utility styles shared by all pages. */
+html { -webkit-tap-highlight-color: transparent; }
+body { font-feature-settings: "cv11", "ss01"; }
+[x-cloak], .hidden-init { display: none; }
+
+.sidebar-scroll::-webkit-scrollbar { width: 6px; }
+.sidebar-scroll::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 999px; }
+
+.toast-enter { animation: toast-in .25s ease-out; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+.modal-backdrop { background: rgba(15, 23, 42, .55); backdrop-filter: blur(2px); }
+
+.bar-track { background: #f1f5f9; border-radius: 999px; height: 8px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #1b8042, #0f5bf5); }
+
+.hero-gradient { background: radial-gradient(1200px 400px at 10% -10%, rgba(15, 91, 245, .12), transparent 60%),
+                             radial-gradient(900px 400px at 110% 10%, rgba(27, 128, 66, .14), transparent 60%), #ffffff; }
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+.has-error .input { border-color: #fb7185; }
+.has-error .input:focus { box-shadow: 0 0 0 4px rgba(244, 63, 94, .15); }
+
+/* Keep IDs such as LD-000107 / STN-000012 on one line in tables */
+.table td.font-mono, .table td a.font-mono, .table td > .font-mono { white-space: nowrap; }

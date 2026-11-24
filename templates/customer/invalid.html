@@ -1,0 +1,11 @@
+{% extends "customer/base_public.html" %}
+{% block title %}Invalid QR code{% endblock %}
+{% block content %}
+<section class="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm sm:p-8">
+  <h1 class="text-xl font-bold text-slate-900">We couldn't recognise this QR code</h1>
+  <p class="mt-2 text-sm text-slate-600">Please make sure you scanned the complete RELUX ELECTRIC QR code at the charging station and try again.</p>
+  <div class="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-center">
+    {% if site_settings.website_url %}<a href="{{ site_settings.website_url }}" class="btn-primary" rel="noopener">Visit RELUX ELECTRIC</a>{% endif %}
+  </div>
+</section>
+{% endblock %}

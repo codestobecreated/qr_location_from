@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% load relux %}
+{% block title %}{{ station.name }}{% endblock %}
+{% block page_title %}{{ station.name }}{% endblock %}
+{% block content %}
+<div class="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+  <div>
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="chip font-mono">{{ station.station_id }}</span>
+      {% badge station.status station.get_status_display %}
+      {% if station.accepts_enquiries %}{% badge "active" "Accepting enquiries" %}{% else %}{% badge "inactive" "Not accepting enquiries" "amber" %}{% endif %}
+    </div>
+    <p class="mt-2 text-sm text-slate-500">at <a class="link" href="{{ station.location.get_absolute_url }}">{{ station.location.name }}</a> · {{ station.city }}, {{ station.state }}</p>
+  </div>
+  <div class="flex flex-wrap gap-2">
+    <a class="btn-light" href="{% url 'analytics:station' station.pk %}">Analytics</a>
+    <a class="btn-light" href="{% url 'leads:list' %}?station={{ station.pk }}">View leads</a>
+    {% if request.user.is_super_admin %}
+      <a class="btn-light" href="{% url 'stations:edit' station.pk %}">Edit</a>
+      <form method="post" action="{% url 'stations:set_status' station.pk %}" class="flex gap-2" data-confirm="Change the status of this station? An inactive or under-maintenance station's QR code shows a 'not accepting enquiries' page; it is never redirected to another station." data-confirm-style="primary">
+        {% csrf_token %}
+        <label for="status-select" class="sr-only">Station status</label>
+        <select id="status-select" name="status" class="input !w-auto !py-2">
+          {% for v, l in station.StationStatus.choices %}<option value="{{ v }}" {% if station.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
+        </select>
+        <button class="btn-light">Update status</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-5">
+  <div class="stat-card"><span class="stat-label">QR scans</span><span class="stat-value">{{ stats.scans }}</span></div>
+  <div class="stat-card"><span class="stat-label">Form visits</span><span class="stat-value">{{ stats.form_views }}</span></div>
+  <div class="stat-card"><span class="stat-label">Leads</span><span class="stat-value">{{ stats.leads }}</span></div>
+  <div class="stat-card"><span class="stat-label">Converted</span><span class="stat-value">{{ stats.converted }}</span></div>
+  <div class="stat-card"><span class="stat-label">Conversion rate</span><span class="stat-value">{{ stats.converted|percent:stats.leads }}</span></div>
+</div>
+
+<div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
+  <div class="card card-pad">
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="card-title">Permanent QR code</h2>
+      {% if mapping.is_active %}{% badge "active" "QR Active" %}{% else %}{% badge "inactive" "QR Inactive" %}{% endif %}
+    </div>
+    <img src="{% url 'qrcodes:png' mapping.pk %}?inline=1&v={{ mapping.image.name|slugify }}" alt="QR code for {{ station.name }}" class="mx-auto w-full max-w-xs rounded-xl border border-slate-200">
+    <div class="mt-4 rounded-xl bg-slate-50 p-3">
+      <p class="text-xs text-slate-500">QR URL</p>
+      <p class="break-all font-mono text-xs text-slate-900">{{ mapping.public_url }}</p>
+      <button type="button" class="link mt-1 text-xs" data-copy="{{ mapping.public_url }}">Copy URL</button>
+    </div>
+    <div class="mt-4 grid grid-cols-2 gap-2">
+      <a href="{% url 'qrcodes:png' mapping.pk %}" class="btn-blue btn-sm">Download PNG</a>
+      <a href="{% url 'qrcodes:pdf' mapping.pk %}" class="btn-green btn-sm">Print PDF</a>
+    </div>
+    <a href="{% url 'qrcodes:detail' mapping.pk %}" class="btn-light btn-sm mt-2 w-full">Manage QR code</a>
+  </div>
+
+  <div class="card card-pad">
+    <h2 class="card-title mb-3">Station details</h2>
+    <dl>
+      <div class="dl-row"><dt>Location</dt><dd><a class="link" href="{{ station.location.get_absolute_url }}">{{ station.location.name }}</a></dd></div>
+      <div class="dl-row"><dt>Location ID</dt><dd class="font-mono text-xs">{{ station.location.location_id }}</dd></div>
+      <div class="dl-row"><dt>Address</dt><dd>{{ station.address }}</dd></div>
+      <div class="dl-row"><dt>City</dt><dd>{{ station.city }}</dd></div>
+      <div class="dl-row"><dt>State</dt><dd>{{ station.state }}</dd></div>
+      <div class="dl-row"><dt>Charger type</dt><dd>{{ station.get_charger_type_display }}</dd></div>
+      <div class="dl-row"><dt>Capacity</dt><dd>{{ station.capacity_display }}</dd></div>
+      <div class="dl-row"><dt>Created</dt><dd>{{ station.created_at|date:"d M Y, H:i" }}</dd></div>
+      <div class="dl-row"><dt>Updated</dt><dd>{{ station.updated_at|date:"d M Y, H:i" }}</dd></div>
+    </dl>
+  </div>
+
+  <div class="card">
+    <div class="flex items-center justify-between p-5"><h2 class="card-title">Recent leads</h2><a class="link text-sm" href="{% url 'leads:list' %}?station={{ station.pk }}">All →</a></div>
+    <ul class="divide-y divide-slate-100">
+      {% for lead in recent_leads %}
+      <li class="flex items-center justify-between gap-3 px-5 py-3">
+        <div class="min-w-0">
+          <a class="link text-sm" href="{{ lead.get_absolute_url }}">{{ lead.full_name }}</a>
+          <p class="truncate text-xs text-slate-500">{{ lead.get_category_display }} · {{ lead.submitted_at|date:"d M, H:i" }}</p>
+        </div>
+        {% badge lead.status lead.get_status_display %}
+      </li>
+      {% empty %}
+      <li class="px-5 py-10 text-center text-sm text-slate-500">No leads yet.</li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endblock %}

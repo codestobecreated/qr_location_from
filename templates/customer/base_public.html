@@ -1,0 +1,26 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en">
+<head>
+  {% include "partials/head_assets.html" %}
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="format-detection" content="telephone=no">
+  <title>{% block title %}Enquiry{% endblock %} · RELUX ELECTRIC</title>
+</head>
+<body class="min-h-screen font-sans text-slate-800 antialiased hero-gradient">
+  <div class="mx-auto flex min-h-screen max-w-xl flex-col px-4 pb-10 pt-6 sm:pt-10">
+    <header class="mb-6 flex items-center justify-center">
+      <a href="{{ site_settings.website_url|default:'#' }}" rel="noopener"><img src="{% static 'images/relux-logo.png' %}" alt="RELUX ELECTRIC" class="h-14 w-auto sm:h-16"></a>
+    </header>
+    <main class="flex-1">{% block content %}{% endblock %}</main>
+    <footer class="mt-10 text-center text-xs text-slate-500">
+      <p>© {% now "Y" %} {{ site_settings.company_name }}. All rights reserved.</p>
+      <p class="mt-1">
+        <a class="hover:underline" href="{% url 'public:privacy' %}">Privacy Policy</a>
+        {% if site_settings.support_phone %} · <a class="hover:underline" href="tel:{{ site_settings.support_phone }}">{{ site_settings.support_phone }}</a>{% endif %}
+        {% if site_settings.support_email %} · <a class="hover:underline" href="mailto:{{ site_settings.support_email }}">{{ site_settings.support_email }}</a>{% endif %}
+      </p>
+    </footer>
+  </div>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

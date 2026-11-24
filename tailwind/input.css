@@ -1,0 +1,12 @@
+/*
+  Tailwind source for the optional production stylesheet (no Node.js required).
+  From the project root, using the Tailwind v3 standalone CLI binary:
+
+    tailwindcss -c static/js/tailwind.config.js -i tailwind/input.css -o static/css/tailwind.build.css --minify
+
+  When static/css/tailwind.build.css exists, templates load it instead of the Tailwind CDN runtime.
+*/
+@import "../templates/partials/tw_components.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

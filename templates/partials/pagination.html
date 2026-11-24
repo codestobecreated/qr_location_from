@@ -1,0 +1,28 @@
+{% load relux %}
+{% if page.paginator.count %}
+<div class="flex flex-col items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-sm text-slate-600 sm:flex-row">
+  <div class="flex items-center gap-3">
+    <span>Showing <strong>{{ page.start_index }}</strong>–<strong>{{ page.end_index }}</strong> of <strong>{{ page.paginator.count }}</strong></span>
+    <form method="get" class="flex items-center gap-1">
+      {% for key, value in request.GET.items %}{% if key != "per_page" and key != "page" %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endif %}{% endfor %}
+      <label for="per_page" class="sr-only">Rows per page</label>
+      <select id="per_page" name="per_page" class="input !w-auto !py-1 !text-xs" data-autosubmit>
+        <option value="25" {% if page.paginator.per_page == 25 %}selected{% endif %}>25 / page</option>
+        <option value="50" {% if page.paginator.per_page == 50 %}selected{% endif %}>50 / page</option>
+        <option value="100" {% if page.paginator.per_page == 100 %}selected{% endif %}>100 / page</option>
+      </select>
+    </form>
+  </div>
+  <nav class="flex items-center gap-1" aria-label="Pagination">
+    {% if page.has_previous %}
+      <a class="btn-light btn-sm" href="?{% url_replace page=1 %}">« First</a>
+      <a class="btn-light btn-sm" href="?{% url_replace page=page.previous_page_number %}">‹ Prev</a>
+    {% endif %}
+    <span class="px-2">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+    {% if page.has_next %}
+      <a class="btn-light btn-sm" href="?{% url_replace page=page.next_page_number %}">Next ›</a>
+      <a class="btn-light btn-sm" href="?{% url_replace page=page.paginator.num_pages %}">Last »</a>
+    {% endif %}
+  </nav>
+</div>
+{% endif %}

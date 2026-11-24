@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% load relux %}
+{% block title %}QR Scan Analytics{% endblock %}
+{% block page_title %}QR Scan Analytics{% endblock %}
+{% block content %}
+<div class="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+  <div>
+    <p class="text-sm text-slate-500">Funnel: QR scan → form visit → enquiry submission → lead conversion · <strong class="text-slate-800">{{ dr.label }}</strong></p>
+    {% if request.user.is_manager %}<p class="text-xs text-slate-400">Showing your assigned locations only.</p>{% endif %}
+  </div>
+  {% include "analytics/_range_picker.html" %}
+</div>
+
+{% include "analytics/_funnel.html" %}
+
+<div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
+  <div class="card card-pad xl:col-span-2">
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+      <h2 class="card-title">Lead &amp; scan trend</h2>
+      <div class="inline-flex rounded-xl bg-slate-100 p-1 text-xs font-semibold">
+        <a href="?{% url_replace period='daily' %}" class="rounded-lg px-3 py-1.5 {% if period == 'daily' %}bg-white shadow text-slate-900{% else %}text-slate-500{% endif %}">Daily</a>
+        <a href="?{% url_replace period='weekly' %}" class="rounded-lg px-3 py-1.5 {% if period == 'weekly' %}bg-white shadow text-slate-900{% else %}text-slate-500{% endif %}">Weekly</a>
+        <a href="?{% url_replace period='monthly' %}" class="rounded-lg px-3 py-1.5 {% if period == 'monthly' %}bg-white shadow text-slate-900{% else %}text-slate-500{% endif %}">Monthly</a>
+      </div>
+    </div>
+    <div class="h-80"><canvas id="trend-chart" data-chart="trend" data-source="trend-data" aria-label="Lead and scan trend chart" role="img"></canvas></div>
+    {{ chart|json_script:"trend-data" }}
+  </div>
+  <div class="card card-pad">
+    <h2 class="card-title mb-4">Enquiry categories</h2>
+    <div class="h-80"><canvas id="category-chart" data-chart="doughnut" data-source="category-data" aria-label="Enquiry category distribution" role="img"></canvas></div>
+    {{ category_chart|json_script:"category-data" }}
+  </div>
+</div>
+
+<div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
+  <div class="card">
+    <div class="flex items-center justify-between p-5"><h2 class="card-title">🏆 Highest-performing stations</h2><span class="text-xs text-slate-500">by leads</span></div>
+    <table class="table"><thead><tr><th>#</th><th>Station</th><th class="text-right">Scans</th><th class="text-right">Leads</th><th class="text-right">Conv.</th></tr></thead><tbody>
+      {% for s in top %}<tr><td class="text-xs text-slate-400">{{ forloop.counter }}</td><td><a class="link" href="{% url 'analytics:station' s.pk %}?{{ dr.as_query }}">{{ s.name }}</a><div class="text-xs text-slate-500">{{ s.location.name }}</div></td><td class="text-right tabular-nums">{{ s.m_scans }}</td><td class="text-right font-semibold tabular-nums">{{ s.m_leads }}</td><td class="text-right tabular-nums">{{ s.m_rate|floatformat:2 }}%</td></tr>
+      {% empty %}<tr><td colspan="5" class="py-10 text-center text-slate-500">No active stations.</td></tr>{% endfor %}
+    </tbody></table>
+  </div>
+  <div class="card">
+    <div class="flex items-center justify-between p-5"><h2 class="card-title">⚠️ Lowest-performing stations</h2><span class="text-xs text-slate-500">active stations, fewest leads</span></div>
+    <table class="table"><thead><tr><th>#</th><th>Station</th><th class="text-right">Scans</th><th class="text-right">Leads</th><th class="text-right">Conv.</th></tr></thead><tbody>
+      {% for s in bottom %}<tr><td class="text-xs text-slate-400">{{ forloop.counter }}</td><td><a class="link" href="{% url 'analytics:station' s.pk %}?{{ dr.as_query }}">{{ s.name }}</a><div class="text-xs text-slate-500">{{ s.location.name }}</div></td><td class="text-right tabular-nums">{{ s.m_scans }}</td><td class="text-right font-semibold tabular-nums">{{ s.m_leads }}</td><td class="text-right tabular-nums">{{ s.m_rate|floatformat:2 }}%</td></tr>
+      {% empty %}<tr><td colspan="5" class="py-10 text-center text-slate-500">No active stations.</td></tr>{% endfor %}
+    </tbody></table>
+  </div>
+</div>
+
+<div class="card mt-6">
+  <div class="flex flex-col gap-3 border-b border-slate-100 p-4 md:flex-row md:items-center md:justify-between">
+    <div class="inline-flex rounded-xl bg-slate-100 p-1 text-sm font-semibold">
+      <a href="?{% url_replace tab='locations' page='' %}" class="rounded-lg px-4 py-1.5 {% if tab == 'locations' %}bg-white shadow text-slate-900{% else %}text-slate-500{% endif %}">Location-wise</a>
+      <a href="?{% url_replace tab='stations' page='' %}" class="rounded-lg px-4 py-1.5 {% if tab == 'stations' %}bg-white shadow text-slate-900{% else %}text-slate-500{% endif %}">Station-wise</a>
+    </div>
+    <form method="get" class="flex gap-2">
+      {% for key, value in request.GET.items %}{% if key != "q" and key != "page" %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endif %}{% endfor %}
+      <label for="aq" class="sr-only">Search</label>
+      <input id="aq" name="q" value="{{ q }}" type="search" class="input !py-2" placeholder="Filter by name, city or ID">
+      <button class="btn-light btn-sm">Search</button>
+    </form>
+  </div>
+  {% if tab == "stations" %}
+    {% include "analytics/_metrics_table.html" with rows=station_page kind="station" sort_param="ssort" %}
+    {% include "partials/pagination.html" with page=station_page %}
+  {% else %}
+    {% include "analytics/_metrics_table.html" with rows=location_page kind="location" sort_param="lsort" %}
+    {% include "partials/pagination.html" with page=location_page %}
+  {% endif %}
+</div>
+
+<div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
+  <div class="card">
+    <div class="p-5"><h2 class="card-title">State-wise leads</h2></div>
+    <table class="table"><thead><tr><th>State</th><th class="text-right">Leads</th><th class="text-right">Converted</th><th class="text-right">Rate</th></tr></thead><tbody>
+      {% for r in states %}<tr><td>{{ r.source_state }}</td><td class="text-right tabular-nums">{{ r.total }}</td><td class="text-right tabular-nums">{{ r.converted }}</td><td class="text-right tabular-nums">{{ r.rate|floatformat:2 }}%</td></tr>
+      {% empty %}<tr><td colspan="4" class="py-8 text-center text-slate-500">No leads.</td></tr>{% endfor %}
+    </tbody></table>
+  </div>
+  <div class="card">
+    <div class="p-5"><h2 class="card-title">City-wise leads <span class="text-xs font-normal text-slate-500">(top 25)</span></h2></div>
+    <table class="table"><thead><tr><th>City</th><th class="text-right">Leads</th><th class="text-right">Converted</th><th class="text-right">Rate</th></tr></thead><tbody>
+      {% for r in cities %}<tr><td>{{ r.source_city }}</td><td class="text-right tabular-nums">{{ r.total }}</td><td class="text-right tabular-nums">{{ r.converted }}</td><td class="text-right tabular-nums">{{ r.rate|floatformat:2 }}%</td></tr>
+      {% empty %}<tr><td colspan="4" class="py-8 text-center text-slate-500">No leads.</td></tr>{% endfor %}
+    </tbody></table>
+  </div>
+  <div class="space-y-6">
+    <div class="card">
+      <div class="p-5"><h2 class="card-title">Category breakdown</h2></div>
+      <table class="table"><thead><tr><th>Category</th><th class="text-right">Leads</th><th class="text-right">Conv.</th></tr></thead><tbody>
+        {% for r in categories %}<tr><td class="text-xs">{{ r.label }}</td><td class="text-right tabular-nums">{{ r.total }}</td><td class="text-right tabular-nums">{{ r.rate|floatformat:2 }}%</td></tr>
+        {% empty %}<tr><td colspan="3" class="py-8 text-center text-slate-500">No leads.</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+    <div class="card">
+      <div class="p-5"><h2 class="card-title">Scans by device</h2></div>
+      <table class="table"><tbody>
+        {% for r in devices %}<tr><td>{{ r.device_type|default:"Unknown" }}</td><td class="text-right tabular-nums">{{ r.total }}</td></tr>
+        {% empty %}<tr><td class="py-8 text-center text-slate-500">No scans.</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  </div>
+</div>
+
+<div class="card mt-6">
+  <div class="flex items-center justify-between p-5"><h2 class="card-title">{{ period|title }} report</h2><a class="link text-sm" href="{% url 'reports:index' %}">Export reports →</a></div>
+  <div class="table-wrap max-h-96 overflow-y-auto">
+    <table class="table"><thead><tr><th>Period</th><th class="text-right">QR scans</th><th class="text-right">Leads</th><th class="text-right">Converted</th><th class="text-right">Conversion</th></tr></thead><tbody>
+      {% for r in series reversed %}<tr><td>{{ r.label }}</td><td class="text-right tabular-nums">{{ r.scans }}</td><td class="text-right tabular-nums">{{ r.leads }}</td><td class="text-right tabular-nums">{{ r.converted }}</td><td class="text-right tabular-nums">{{ r.converted|percent:r.leads }}</td></tr>{% endfor %}
+    </tbody></table>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}{% include "partials/chart_js.html" %}{% endblock %}

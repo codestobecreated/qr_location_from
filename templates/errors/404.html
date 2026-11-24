@@ -1,0 +1,11 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en"><head>{% include "partials/head_assets.html" %}<title>Page not found · RELUX ELECTRIC</title></head>
+<body class="flex min-h-screen items-center justify-center bg-slate-50 p-6 font-sans">
+  <div class="card card-pad max-w-md text-center">
+    <img src="{% static 'images/relux-logo.png' %}" alt="RELUX ELECTRIC" class="mx-auto mb-6 h-12">
+    <p class="text-5xl font-extrabold text-electric-600">404</p>
+    <h1 class="mt-2 text-xl font-semibold text-slate-900">Page not found</h1>
+    <p class="mt-2 text-sm text-slate-500">The page you are looking for does not exist. If you scanned a RELUX ELECTRIC QR code, please check that the full code was scanned.</p>
+    {% if request.user.is_authenticated %}<a href="{% url 'dashboard:home' %}" class="btn-primary mt-6">Back to dashboard</a>{% else %}<a href="{{ site_settings.website_url|default:'/' }}" class="btn-primary mt-6">Visit RELUX ELECTRIC</a>{% endif %}
+  </div>
+</body></html>

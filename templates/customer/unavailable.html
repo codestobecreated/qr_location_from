@@ -1,0 +1,13 @@
+{% extends "customer/base_public.html" %}
+{% block title %}Station unavailable{% endblock %}
+{% block content %}
+{% include "customer/_station_card.html" %}
+<section class="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center">
+  <h2 class="text-lg font-bold text-amber-900">This station is not accepting enquiries right now</h2>
+  <p class="mt-2 text-sm text-amber-800">The QR code you scanned belongs to <strong>{{ station.name }}</strong>, which is currently unavailable. Please contact RELUX ELECTRIC directly and we will be happy to help.</p>
+  <div class="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-center">
+    {% if site_settings.support_phone %}<a href="tel:{{ site_settings.support_phone }}" class="btn-primary">Call {{ site_settings.support_phone }}</a>{% endif %}
+    {% if site_settings.website_url %}<a href="{{ site_settings.website_url }}" class="btn-light" rel="noopener">Visit our website</a>{% endif %}
+  </div>
+</section>
+{% endblock %}

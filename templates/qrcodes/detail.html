@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% load relux %}
+{% block title %}QR · {{ station.name }}{% endblock %}
+{% block page_title %}QR code · {{ station.name }}{% endblock %}
+{% block content %}
+<div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
+  <div class="card card-pad">
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="card-title">Printed QR card</h2>
+      {% with st=mapping.effective_status %}
+      {% if st == "active" %}{% badge "active" "Active" %}{% elif st == "inactive" %}{% badge "inactive" "QR Inactive" %}{% else %}{% badge "station_inactive" "Station/location inactive" %}{% endif %}
+      {% endwith %}
+    </div>
+    <img src="{% url 'qrcodes:png' mapping.pk %}?inline=1&v={{ mapping.image.name|slugify }}" alt="QR code for {{ station.name }}" class="mx-auto w-full max-w-sm rounded-xl border border-slate-200">
+    <div class="mt-4 grid grid-cols-2 gap-2">
+      <a href="{% url 'qrcodes:png' mapping.pk %}" class="btn-blue btn-sm">Download PNG</a>
+      <a href="{% url 'qrcodes:pdf' mapping.pk %}" class="btn-green btn-sm">Print-ready PDF</a>
+    </div>
+  </div>
+
+  <div class="space-y-6 xl:col-span-2">
+    <div class="card card-pad">
+      <h2 class="card-title mb-3">Mapping</h2>
+      <dl>
+        <div class="dl-row"><dt>Station</dt><dd><a class="link" href="{{ station.get_absolute_url }}">{{ station.name }}</a> <span class="font-mono text-xs text-slate-500">{{ station.station_id }}</span></dd></div>
+        <div class="dl-row"><dt>Location</dt><dd><a class="link" href="{{ station.location.get_absolute_url }}">{{ station.location.name }}</a> <span class="font-mono text-xs text-slate-500">{{ station.location.location_id }}</span></dd></div>
+        <div class="dl-row"><dt>City / State</dt><dd>{{ station.city }}, {{ station.state }}</dd></div>
+        <div class="dl-row"><dt>Permanent URL</dt><dd class="font-mono text-xs break-all">{{ mapping.public_url }} <button type="button" class="link ml-1" data-copy="{{ mapping.public_url }}">Copy</button></dd></div>
+        <div class="dl-row"><dt>Token</dt><dd class="font-mono text-xs">{{ mapping.token }}</dd></div>
+        <div class="dl-row"><dt>Created</dt><dd>{{ mapping.created_at|date:"d M Y, H:i" }}{% if mapping.created_by %} by {{ mapping.created_by }}{% endif %}</dd></div>
+        <div class="dl-row"><dt>Regenerated</dt><dd>{% if mapping.regeneration_count %}{{ mapping.regeneration_count }} time(s), last {{ mapping.regenerated_at|date:"d M Y, H:i" }}{% else %}Never{% endif %}</dd></div>
+      </dl>
+      {% if request.user.is_super_admin %}
+      <div class="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-5">
+        <form method="post" action="{% url 'qrcodes:toggle' mapping.pk %}" data-confirm="{% if mapping.is_active %}Deactivate this QR code? Customers who scan it will see a 'not accepting enquiries' page. It will never be redirected to another station.{% else %}Activate this QR code so it accepts enquiries again?{% endif %}" data-confirm-style="{% if mapping.is_active %}danger{% else %}primary{% endif %}">
+          {% csrf_token %}
+          <button class="{% if mapping.is_active %}btn-light{% else %}btn-green{% endif %}">{% if mapping.is_active %}Deactivate QR{% else %}Activate QR{% endif %}</button>
+        </form>
+        <a href="{% url 'qrcodes:regenerate' mapping.pk %}" class="btn-light !text-rose-600">Regenerate QR…</a>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="grid grid-cols-2 gap-4 md:grid-cols-5">
+      <div class="stat-card"><span class="stat-label">Scans</span><span class="stat-value">{{ stats.scans }}</span></div>
+      <div class="stat-card"><span class="stat-label">Form visits</span><span class="stat-value">{{ stats.form_views }}</span></div>
+      <div class="stat-card"><span class="stat-label">Submissions</span><span class="stat-value">{{ stats.submissions }}</span></div>
+      <div class="stat-card"><span class="stat-label">Leads</span><span class="stat-value">{{ stats.leads }}</span></div>
+      <div class="stat-card"><span class="stat-label">Bot hits filtered</span><span class="stat-value text-slate-400">{{ stats.bot_scans }}</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
+  <div class="card">
+    <div class="p-5"><h2 class="card-title">Recent scans</h2></div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>When</th><th>Device</th><th>Browser</th><th>Funnel</th></tr></thead>
+        <tbody>
+        {% for s in recent_scans %}
+          <tr>
+            <td class="whitespace-nowrap text-xs">{{ s.scanned_at|date:"d M Y, H:i" }}</td>
+            <td class="text-xs">{{ s.device_type }}<div class="text-slate-500">{{ s.os }}</div></td>
+            <td class="text-xs">{{ s.browser }}</td>
+            <td class="text-xs">
+              {% if s.is_bot %}<span class="chip">Bot – excluded</span>
+              {% else %}
+                {% if s.is_repeat %}<span class="chip">Repeat</span>{% endif %}
+                {% if s.submitted %}{% badge "converted" "Submitted" %}{% elif s.form_viewed %}{% badge "interested" "Viewed form" %}{% else %}{% badge "new" "Scanned" %}{% endif %}
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="py-10 text-center text-slate-500">No scans recorded yet.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="p-5"><h2 class="card-title">Token history</h2><p class="text-sm text-slate-500">Retired tokens stay linked to this station and never accept enquiries again.</p></div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Retired token</th><th>Issued</th><th>Retired</th><th>By</th><th>Reason</th></tr></thead>
+        <tbody>
+        {% for h in history %}
+          <tr>
+            <td class="font-mono text-xs">{{ h.token }}</td>
+            <td class="whitespace-nowrap text-xs">{{ h.issued_at|date:"d M Y" }}</td>
+            <td class="whitespace-nowrap text-xs">{{ h.retired_at|date:"d M Y, H:i" }}</td>
+            <td class="text-xs">{{ h.retired_by|default:"—" }}</td>
+            <td class="text-xs">{{ h.reason }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="py-10 text-center text-slate-500">This QR code has never been regenerated.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

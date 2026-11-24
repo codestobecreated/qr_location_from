@@ -1,0 +1,14 @@
+{% if messages %}
+<div class="mb-6 space-y-2" id="flash-messages">
+  {% for message in messages %}
+  <div class="toast-enter flex items-start gap-3 rounded-xl border px-4 py-3 text-sm shadow-sm
+    {% if message.tags == 'success' %}border-emerald-200 bg-emerald-50 text-emerald-800
+    {% elif message.tags == 'error' %}border-rose-200 bg-rose-50 text-rose-800
+    {% elif message.tags == 'warning' %}border-amber-200 bg-amber-50 text-amber-900
+    {% else %}border-electric-200 bg-electric-50 text-electric-900{% endif %}" role="status">
+    <div class="flex-1 whitespace-pre-line">{{ message }}</div>
+    <button type="button" class="opacity-60 hover:opacity-100" data-dismiss aria-label="Dismiss">✕</button>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}

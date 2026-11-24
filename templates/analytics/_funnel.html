@@ -1,0 +1,9 @@
+{# Funnel cards. Context: totals #}
+<div class="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+  <div class="stat-card"><span class="stat-label">QR scans</span><span class="stat-value">{{ totals.scans }}</span><span class="text-xs text-slate-500">{{ totals.bots }} bot hits excluded</span></div>
+  <div class="stat-card"><span class="stat-label">Form visits</span><span class="stat-value">{{ totals.form_views }}</span><span class="text-xs text-slate-500">{{ totals.form_rate }}% of scans</span></div>
+  <div class="stat-card"><span class="stat-label">Form submissions</span><span class="stat-value">{{ totals.submissions }}</span><span class="text-xs text-slate-500">{{ totals.submit_rate }}% of visits</span></div>
+  <div class="stat-card"><span class="stat-label">Total leads</span><span class="stat-value">{{ totals.leads }}</span><span class="text-xs text-slate-500">duplicates excluded</span></div>
+  <div class="stat-card"><span class="stat-label">Converted</span><span class="stat-value text-brand-700">{{ totals.converted }}</span></div>
+  <div class="stat-card bg-gradient-to-br from-brand-600 to-electric-600 !border-0 text-white"><span class="text-xs font-semibold uppercase tracking-wide text-white/80">Conversion rate</span><span class="text-2xl font-bold tabular-nums">{{ totals.conversion_rate|floatformat:2 }}%</span><span class="text-xs text-white/80">scan → lead {{ totals.scan_to_lead_rate|floatformat:2 }}%</span></div>
+</div>
