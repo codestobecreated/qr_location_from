@@ -1,0 +1,92 @@
+name: Test & Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:            # "Run workflow" button in the Actions tab
+    inputs:
+      check_only:
+        description: "Dry run: only inspect the server (deploy.sh --check), change nothing"
+        type: boolean
+        default: true
+
+concurrency:
+  group: deploy-qr-production
+  cancel-in-progress: false
+
+env:
+  APP_DIR: /home/reluxelectric-qr/htdocs/qr.reluxelectric.com
+  SITE_URL: https://qr.reluxelectric.com
+
+jobs:
+  test:
+    name: Django checks & tests
+    runs-on: ubuntu-latest
+    env:
+      DJANGO_SECRET_KEY: ci-only-not-a-real-secret
+      DJANGO_DEBUG: "True"
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,testserver
+      QR_BASE_URL: https://qr.reluxelectric.com
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python manage.py check
+      - run: python manage.py makemigrations --check --dry-run
+      - run: python manage.py test tests
+      - name: Shell syntax check of deploy scripts
+        run: bash -n deploy/deploy.sh && bash -n deploy/start.sh
+
+  deploy:
+    name: Deploy to qr.reluxelectric.com
+    needs: test
+    # Push to main deploys only after you enable it: Settings → Secrets and variables → Actions →
+    # Variables → New repository variable  AUTO_DEPLOY = true.  Manual "Run workflow" always works.
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' || vars.AUTO_DEPLOY == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH (CloudPanel / Hostinger VPS)
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          APP_DIR: ${{ env.APP_DIR }}
+          CHECK_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.check_only && 'true' || 'false' }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: APP_DIR,CHECK_ONLY
+          command_timeout: 15m
+          script: |
+            set -e
+            cd "$APP_DIR" || { echo "!! $APP_DIR does not exist on the server"; exit 1; }
+            [ -d .git ] || { echo "!! $APP_DIR is not a git clone of the repo yet (see README → CI/CD first-time setup)"; exit 1; }
+            # Run the deploy script from the commit being deployed (works even on the very first deploy).
+            git config --global --get-all safe.directory 2>/dev/null | grep -qxF "$(pwd -P)" \
+              || git config --global --add safe.directory "$(pwd -P)"
+            git fetch --quiet origin main
+            SCRIPT="$(mktemp)"
+            trap 'rm -f "$SCRIPT"' EXIT
+            git show origin/main:deploy/deploy.sh > "$SCRIPT"
+            if [ "$CHECK_ONLY" = "true" ]; then
+              bash "$SCRIPT" --check "$APP_DIR"
+            else
+              bash "$SCRIPT" "$APP_DIR"
+            fi
+
+      - name: Public smoke test
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.check_only) }}
+        run: |
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$SITE_URL/accounts/login/" || true)
+            echo "Attempt $i: HTTP $code"
+            [ "$code" = "200" ] && exit 0
+            sleep 10
+          done
+          echo "::error::$SITE_URL/accounts/login/ did not return HTTP 200"
+          exit 1

@@ -279,3 +279,58 @@ When `static/css/tailwind.build.css` exists, every page uses it automatically.
 * Role-based data scoping on every list, detail, export and analytics query.
 * CSV/Excel exports neutralise spreadsheet formula injection.
 * `next=` redirects are validated; secure cookie/HSTS/SSL settings when DEBUG is off.
+
+---
+
+## 8. CI/CD – automatic deploy from GitHub (qr.reluxelectric.com)
+
+Files:
+
+| File | Purpose |
+| --- | --- |
+| `.github/workflows/deploy.yml` | On every push to `main`: runs Django checks + tests on GitHub, then (if enabled) SSHes into the VPS with `appleboy/ssh-action` and runs the deploy script. Also has a manual **Run workflow** button with a *dry run* option. |
+| `deploy/deploy.sh` | Runs **on the server**. Verifies the repo, refuses if tracked files were edited on the server, fast-forwards to `origin/main`, finds the existing virtualenv, installs requirements, runs `check --deploy`, **backs up the SQLite DB**, `migrate --noinput`, `collectstatic --noinput`, reloads Gunicorn, health-checks. `--check` = read-only. |
+| `deploy/start.sh` | Starts Gunicorn on the CloudPanel App Port (or reloads it). `start.sh ensure` is for a CloudPanel cron job so the site comes back after a reboot. |
+| `.deploy.env` (server only, git-ignored) | Optional overrides: `VENV_DIR`, `GUNICORN_SERVICE`, `APP_PORT`, `GUNICORN_WORKERS`. |
+
+GitHub secrets used (Settings → Secrets and variables → Actions): `SSH_HOST`, `SSH_PORT`, `SSH_USER`, `SSH_PRIVATE_KEY`.
+Server path: `/home/reluxelectric-qr/htdocs/qr.reluxelectric.com`.
+
+Never touched by a deploy: `.env`, `db.sqlite3` (backed up to `backups/` before each migrate, last 15 kept), `media/`,
+other CloudPanel sites, SSH keys, CloudPanel/nginx config. Git is only fast-forwarded – no `reset --hard`, no `clean`.
+
+### How Gunicorn is identified (nothing is assumed)
+
+`deploy.sh` uses, in this order: `GUNICORN_SERVICE` from `.deploy.env` → a systemd unit whose file mentions this
+project directory and gunicorn (restarted with `sudo -n systemctl restart`, needs passwordless sudo for that user) →
+`gunicorn.pid` in the project → a running gunicorn master of the SSH user started from this directory (`kill -HUP`,
+graceful) → if none is running and `APP_PORT` is set, it starts Gunicorn with `deploy/start.sh`. If none of these
+match, the deploy stops with a message instead of guessing.
+
+### First-time setup on the server (once, as the site's SSH user – not root)
+
+```bash
+cd /home/reluxelectric-qr/htdocs/qr.reluxelectric.com
+git clone https://github.com/codestobecreated/qr_location_from.git .   # folder must be empty; private repo → use a deploy key
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+cp .env.example .env && nano .env          # SECRET_KEY, DEBUG=False, hosts, QR_BASE_URL=https://qr.reluxelectric.com
+echo "APP_PORT=<CloudPanel App Port>" > .deploy.env
+bash deploy/deploy.sh --check              # read-only: shows venv, DB path and Gunicorn method
+```
+
+CloudPanel → Cron Jobs: `*/5 * * * *  bash /home/reluxelectric-qr/htdocs/qr.reluxelectric.com/deploy/start.sh ensure`
+
+### Testing the deployment
+
+1. **Dry run from GitHub** – Actions → *Test & Deploy* → **Run workflow** → keep *Dry run* ticked → Run.
+   The deploy job prints what it detected and changes nothing.
+2. **First real deploy** – Run workflow again with *Dry run* unticked.
+3. **Turn on automatic deploys** – Settings → Secrets and variables → Actions → **Variables** →
+   New repository variable `AUTO_DEPLOY` = `true`. From then on every `git push origin main` deploys.
+
+### Logs
+
+* GitHub: repo → **Actions** → *Test & Deploy* → click a run → open the **Deploy to qr.reluxelectric.com** job →
+  expand *Deploy over SSH* (every `==>` line from `deploy.sh`) and *Public smoke test*.
+* Server: `logs/error.log`, `logs/access.log` (when started by `start.sh`), DB backups in `backups/`.

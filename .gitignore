@@ -12,3 +12,10 @@ media/
 staticfiles/
 static/css/tailwind.build.css
 *.log
+
+# Server-side deploy artefacts (never commit)
+.deploy.env
+.deploy.lock
+backups/
+logs/
+gunicorn.pid
