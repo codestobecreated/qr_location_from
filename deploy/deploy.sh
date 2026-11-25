@@ -7,7 +7,7 @@
 #   bash deploy/deploy.sh --check   # READ-ONLY: detect venv / Gunicorn, show the plan, change nothing
 #   bash deploy/deploy.sh           # deploy: pull, pip install, migrate, collectstatic, reload Gunicorn
 #
-# Never touches: .env, the SQLite database, media/, other CloudPanel sites, SSH keys.
+# Never touches: .env, the database (backed up before migrate), media/, other CloudPanel sites, SSH keys.
 # Git is only fast-forwarded (no reset --hard, no clean). The database is backed up before migrate.
 #
 # Optional server-only overrides (never committed) in  <app>/.deploy.env :
@@ -15,6 +15,7 @@
 #   GUNICORN_SERVICE=relux-qr.service     # systemd unit to restart (needs passwordless sudo for it)
 #   APP_PORT=8130                         # CloudPanel "App Port" – only used to START Gunicorn if it is not running
 #   GUNICORN_WORKERS=3
+#   SKIP_DB_BACKUP=1                      # only if mysqldump is unavailable (not recommended)
 # =============================================================================
 set -Eeuo pipefail
 
@@ -48,6 +49,12 @@ cd "$APP_DIR"
 APP_DIR="$(pwd -P)"
 log "Mode: $MODE | Project: $APP_DIR | User: $(id -un)"
 
+# Never as root: files would become root-owned and the site user / Gunicorn could no longer update them.
+if [ "$(id -u)" -eq 0 ]; then
+  OWNER="$(stat -c %U "$APP_DIR" 2>/dev/null || echo '<site user>')"
+  die "Do not run as root. Switch to the site user first:  su - $OWNER   (or use that user as SSH_USER in GitHub)."
+fi
+
 [ -f manage.py ] && [ -f config/settings.py ] || die "$APP_DIR is not this Django project (manage.py/config missing)."
 [ -d .git ] || die "$APP_DIR is not a git clone. Clone the repo there first (see README → Deployment)."
 
@@ -70,6 +77,9 @@ fi
 
 # --- Safety checks on protected files ------------------------------------------
 [ -f .env ] || die ".env is missing in $APP_DIR. Create it from .env.example (it is never created or changed by this script)."
+if ! grep -qE '^DB_ENGINE=sqlite' .env && ! grep -qE '^DB_PASSWORD=.+' .env; then
+  die "DB_PASSWORD is not set in $APP_DIR/.env (the MySQL password lives only there, never in settings.py)."
+fi
 for protected in .env db.sqlite3 media; do
   if git ls-files --error-unmatch "$protected" >/dev/null 2>&1; then
     die "$protected is tracked by git – refusing to deploy (it could be overwritten)."
@@ -176,18 +186,22 @@ if [ "$RESTART_METHOD" = "systemd" ]; then
     || warn "User $(id -un) has no passwordless sudo for systemctl – the restart step would fail. Ask the server admin, or run Gunicorn under this user (APP_PORT) instead."
 fi
 
-DB_PATH="$("$PY" - <<'PYEOF' 2>/dev/null || true
+# Prints "engine|name|host|port" from Django settings (never the password).
+db_info() {
+  "$PY" - <<'PYEOF' 2>/dev/null || true
 import os, sys
 sys.path.insert(0, os.getcwd())
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 try:
     from django.conf import settings
-    print(settings.DATABASES["default"]["NAME"])
+    d = settings.DATABASES["default"]
+    print("|".join([d["ENGINE"].rsplit(".", 1)[-1], str(d["NAME"]), str(d.get("HOST") or ""), str(d.get("PORT") or "")]))
 except Exception:
     pass
 PYEOF
-)"
-log "SQLite database: ${DB_PATH:-<could not read settings – check .env>}"
+}
+DB_INFO="$(db_info)"
+log "Database: ${DB_INFO:-<not readable yet – requirements may need installing; checked again during deploy>}"
 
 if [ "$MODE" = "check" ]; then
   echo
@@ -195,7 +209,7 @@ if [ "$MODE" = "check" ]; then
   echo "    1. git merge --ff-only origin/$BRANCH"
   echo "    2. $VENV_DIR/bin/pip install -r requirements.txt"
   echo "    3. python manage.py check --deploy"
-  echo "    4. back up ${DB_PATH:-the database} to $APP_DIR/backups/"
+  echo "    4. back up the database (${DB_INFO:-see above}) to $APP_DIR/backups/"
   echo "    5. python manage.py migrate --noinput"
   echo "    6. python manage.py collectstatic --noinput"
   echo "    7. restart Gunicorn: $RESTART_METHOD ${RESTART_TARGET}"
@@ -217,21 +231,55 @@ log "Installing Python dependencies"
 log "Django system checks"
 "$PY" manage.py check --deploy --fail-level ERROR
 
-if [ -n "$DB_PATH" ] && [ -f "$DB_PATH" ]; then
-  mkdir -p "$APP_DIR/backups"
-  BACKUP="$APP_DIR/backups/db-$(date +%Y%m%d-%H%M%S)-$(git rev-parse --short "$LOCAL").sqlite3"
-  log "Backing up database to $BACKUP"
-  "$PY" - "$DB_PATH" "$BACKUP" <<'PYEOF'
+# --- Back up the database before migrating ------------------------------------
+DB_INFO="$(db_info)"
+[ -n "$DB_INFO" ] || die "Could not read DATABASES from Django settings (check .env)."
+IFS='|' read -r DB_ENGINE DB_NAME DB_HOST DB_PORT <<< "$DB_INFO"
+mkdir -p "$APP_DIR/backups"
+chmod 700 "$APP_DIR/backups"
+STAMP="$(date +%Y%m%d-%H%M%S)-$(git rev-parse --short "$LOCAL")"
+
+if [ "${SKIP_DB_BACKUP:-0}" = "1" ]; then
+  warn "SKIP_DB_BACKUP=1 – database backup skipped."
+elif [ "$DB_ENGINE" = "mysql" ]; then
+  command -v mysqldump >/dev/null 2>&1 || die "mysqldump not found – refusing to migrate without a backup (set SKIP_DB_BACKUP=1 in .deploy.env to override)."
+  BACKUP="$APP_DIR/backups/db-$STAMP.sql.gz"
+  CNF="$(mktemp)"; chmod 600 "$CNF"
+  # Password goes into a private temp file, never onto the command line or into the log.
+  "$PY" - "$CNF" <<'PYEOF'
+import os, sys
+sys.path.insert(0, os.getcwd())
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+from django.conf import settings
+d = settings.DATABASES["default"]
+with open(sys.argv[1], "w") as fh:
+    password = d["PASSWORD"].replace("\\", "\\\\").replace('"', '\\"')
+    fh.write("[client]\n")
+    fh.write("user=%s\n" % d["USER"])
+    fh.write('password="%s"\n' % password)
+    fh.write("host=%s\n" % (d.get("HOST") or "127.0.0.1"))
+    fh.write("port=%s\n" % (d.get("PORT") or "3306"))
+PYEOF
+  log "Backing up MySQL database $DB_NAME to $BACKUP"
+  if ! mysqldump --defaults-extra-file="$CNF" --single-transaction --no-tablespaces --routines "$DB_NAME" | gzip > "$BACKUP"; then
+    rm -f "$CNF" "$BACKUP"
+    die "MySQL backup failed – migrations were NOT run."
+  fi
+  rm -f "$CNF"
+  chmod 600 "$BACKUP"
+elif [ "$DB_ENGINE" = "sqlite3" ] && [ -f "$DB_NAME" ]; then
+  BACKUP="$APP_DIR/backups/db-$STAMP.sqlite3"
+  log "Backing up SQLite database to $BACKUP"
+  "$PY" - "$DB_NAME" "$BACKUP" <<'PYEOF'
 import sqlite3, sys
-src = sqlite3.connect(sys.argv[1])
-dst = sqlite3.connect(sys.argv[2])
+src = sqlite3.connect(sys.argv[1]); dst = sqlite3.connect(sys.argv[2])
 with dst:
     src.backup(dst)
 dst.close(); src.close()
 PYEOF
-  # Keep the 15 most recent backups
-  ls -1t "$APP_DIR"/backups/db-*.sqlite3 2>/dev/null | tail -n +16 | while read -r old; do rm -f -- "$old"; done
 fi
+# Keep the 15 most recent backups
+ls -1t "$APP_DIR"/backups/db-* 2>/dev/null | tail -n +16 | while read -r old; do rm -f -- "$old"; done
 
 log "Applying migrations"
 "$PY" manage.py migrate --noinput

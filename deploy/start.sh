@@ -10,6 +10,10 @@ set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$APP_DIR"
+if [ "$(id -u)" -eq 0 ]; then
+  echo "!! Do not start Gunicorn as root. Run as the site user:  su - $(stat -c %U "$APP_DIR")" >&2
+  exit 1
+fi
 if [ -f .deploy.env ]; then set -a; . ./.deploy.env; set +a; fi
 
 APP_PORT="${APP_PORT:-}"
