@@ -334,3 +334,29 @@ CloudPanel → Cron Jobs: `*/5 * * * *  bash /home/reluxelectric-qr/htdocs/qr.re
 * GitHub: repo → **Actions** → *Test & Deploy* → click a run → open the **Deploy to qr.reluxelectric.com** job →
   expand *Deploy over SSH* (every `==>` line from `deploy.sh`) and *Public smoke test*.
 * Server: `logs/error.log`, `logs/access.log` (when started by `start.sh`), DB backups in `backups/`.
+
+---
+
+## 9. Database: MySQL (CloudPanel)
+
+Production uses the CloudPanel MySQL database **`reluxqrdb`** with user **`reluxqruser`** (driver: PyMySQL).
+The old SQLite setting is kept, commented out, in `config/settings.py`.
+
+Add to the server's `.env` (never commit it):
+
+```
+DB_NAME=reluxqrdb
+DB_USER=reluxqruser
+DB_PASSWORD=<password set in CloudPanel>
+DB_HOST=127.0.0.1
+DB_PORT=3306
+```
+
+Then, on the server: `.venv/bin/pip install -r requirements.txt`, `python manage.py migrate`,
+`python manage.py createsuperuser`. Times are stored in India time (`DATABASES TIME_ZONE`) because the server's
+MySQL has no time-zone tables. Before every migrate, `deploy/deploy.sh` saves a `mysqldump` backup
+(`backups/db-*.sql.gz`, last 15 kept). Restore one with:
+`gunzip < backups/db-XXXX.sql.gz | mysql -u reluxqruser -p reluxqrdb`.
+
+A PC without MySQL can still run the app for development by adding `DB_ENGINE=sqlite` to that PC's `.env`.
+GitHub Actions runs all tests against a temporary MySQL 8 database before deploying.

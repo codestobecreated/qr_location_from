@@ -87,19 +87,42 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-# Database – Django default SQLite
+# Database – MySQL (CloudPanel database "reluxqrdb", user "reluxqruser").
+# Connection details come from .env: DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT.
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": os.getenv("SQLITE_PATH", str(BASE_DIR / "db.sqlite3")),
+        "ENGINE": "django.db.backends.mysql",
+        "NAME": os.getenv("DB_NAME", "reluxqrdb"),
+        "USER": os.getenv("DB_USER", "reluxqruser"),
+        "PASSWORD": os.getenv("DB_PASSWORD", ""),
+        "HOST": os.getenv("DB_HOST", "127.0.0.1"),
+        "PORT": os.getenv("DB_PORT", "3306"),
+        "CONN_MAX_AGE": 60,
+        # Store times in India time: the server's MySQL has no time-zone tables, so Django must
+        # never need CONVERT_TZ (same fix as the leads.reluxelectric.com site on this server).
+        "TIME_ZONE": os.getenv("TIME_ZONE", "Asia/Kolkata"),
         "OPTIONS": {
-            "timeout": 20,
-            # WAL improves concurrent reads while public enquiries are being written.
-            "init_command": "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;",
-            "transaction_mode": "IMMEDIATE",
+            "charset": "utf8mb4",
+            "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
         },
     }
 }
+
+# --- Old default: SQLite (disabled) ---------------------------------------------------------
+# DATABASES = {
+#     "default": {
+#         "ENGINE": "django.db.backends.sqlite3",
+#         "NAME": os.getenv("SQLITE_PATH", str(BASE_DIR / "db.sqlite3")),
+#         "OPTIONS": {
+#             "timeout": 20,
+#             "init_command": "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;",
+#             "transaction_mode": "IMMEDIATE",
+#         },
+#     }
+# }
+# Local development on a PC without MySQL only: put DB_ENGINE=sqlite in that PC's .env.
+if os.getenv("DB_ENGINE", "").lower() == "sqlite":
+    DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": str(BASE_DIR / "db.sqlite3")}}
 
 AUTH_USER_MODEL = "accounts.User"
 
