@@ -22,7 +22,23 @@ jobs:
   test:
     name: Django checks & tests
     runs-on: ubuntu-latest
+    # Throwaway MySQL that exists only while the tests run on GitHub (NOT the server's database)
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root
+          MYSQL_DATABASE: reluxqrdb
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pci-root"
+          --health-interval=5s --health-timeout=5s --health-retries=20
     env:
+      DB_NAME: reluxqrdb
+      DB_USER: root
+      DB_PASSWORD: ci-root
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3306"
       DJANGO_SECRET_KEY: ci-only-not-a-real-secret
       DJANGO_DEBUG: "True"
       DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,testserver
