@@ -55,6 +55,15 @@ jobs:
       - run: python manage.py test tests
       - name: Shell syntax check of deploy scripts
         run: bash -n deploy/deploy.sh && bash -n deploy/start.sh
+      - name: Show deploy switch
+        env:
+          AUTO_DEPLOY_VAR: ${{ vars.AUTO_DEPLOY }}
+        run: |
+          if [ -z "$AUTO_DEPLOY_VAR" ]; then
+            echo "::notice::AUTO_DEPLOY repository variable is NOT set (Settings → Secrets and variables → Actions → Variables tab). Push deploys are OFF."
+          else
+            echo "::notice::AUTO_DEPLOY repository variable = [${AUTO_DEPLOY_VAR}] (length ${#AUTO_DEPLOY_VAR}). Push deploys are $( [ "$(echo "$AUTO_DEPLOY_VAR" | tr -d '[:space:]' | tr A-Z a-z)" = true ] && echo ON || echo OFF )."
+          fi
 
   deploy:
     name: Deploy to qr.reluxelectric.com
@@ -63,7 +72,8 @@ jobs:
     # Variables → New repository variable  AUTO_DEPLOY = true.  Manual "Run workflow" always works.
     if: >-
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'workflow_dispatch' || vars.AUTO_DEPLOY == 'true')
+      (github.event_name == 'workflow_dispatch' || vars.AUTO_DEPLOY == 'true' ||
+       vars.AUTO_DEPLOY == 'true ' || vars.AUTO_DEPLOY == ' true')
     runs-on: ubuntu-latest
     steps:
       - name: Deploy over SSH (CloudPanel / Hostinger VPS)
