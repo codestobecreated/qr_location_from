@@ -106,7 +106,7 @@ DATABASES = {
         "ENGINE": "django.db.backends.mysql",
         "NAME": "reluxqrdb",
         "USER": "reluxqruser",
-        "PASSWORD": "YOUR_DATABASE_PASSWORD",
+        "PASSWORD": "Reluxgroups@2024",
         "HOST": "127.0.0.1",
         "PORT": "3306",
     }
