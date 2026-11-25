@@ -100,17 +100,30 @@ WSGI_APPLICATION = "config.wsgi.application"
 #         },
 #     }
 # }
-# Datebase - Hostinger MYSQL 
+# Database - Hostinger MySQL (CloudPanel database "reluxqrdb", user "reluxqruser").
+# The password is NEVER written here: put DB_PASSWORD=... in the server's .env file.
+# GitHub Actions sets DB_* itself for its temporary test database.
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.mysql",
-        "NAME": "reluxqrdb",
-        "USER": "reluxqruser",
-        "PASSWORD": "YOUR_DATABASE_PASSWORD",
-        "HOST": "127.0.0.1",
-        "PORT": "3306",
+        "NAME": os.getenv("DB_NAME", "reluxqrdb"),
+        "USER": os.getenv("DB_USER", "reluxqruser"),
+        "PASSWORD": os.getenv("DB_PASSWORD", ""),
+        "HOST": os.getenv("DB_HOST", "127.0.0.1"),
+        "PORT": os.getenv("DB_PORT", "3306"),
+        # The server's MySQL has no time-zone tables; storing India time avoids CONVERT_TZ errors
+        # on the dashboard/analytics date charts (same fix as leads.reluxelectric.com).
+        "TIME_ZONE": os.getenv("TIME_ZONE", "Asia/Kolkata"),
+        "OPTIONS": {
+            "charset": "utf8mb4",  # Tamil / emoji in names and messages
+            "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
+        },
     }
 }
+
+# Local PC without MySQL only (never on the server): put DB_ENGINE=sqlite in that PC's .env.
+if os.getenv("DB_ENGINE", "").lower() == "sqlite":
+    DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": str(BASE_DIR / "db.sqlite3")}}
 
 AUTH_USER_MODEL = "accounts.User"
 
