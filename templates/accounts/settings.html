@@ -25,7 +25,7 @@
         <div class="dl-row"><dt>Database</dt><dd>SQLite</dd></div>
         <div class="dl-row"><dt>Debug mode</dt><dd>{% if debug %}<span class="text-amber-700">On (development)</span>{% else %}Off{% endif %}</dd></div>
       </dl>
-      <p class="help mt-3">The QR base URL is set with the <code>QR_BASE_URL</code> environment variable. Changing it refreshes printed QR images but never changes a station's token.</p>
+      <p class="help mt-3">The QR base URL is set with the <code>QR_BASE_URL</code> environment variable. Changing it refreshes printed QR images but never changes an existing QR code's token.</p>
       <div class="mt-4 flex flex-wrap gap-2">
         <a class="btn-light btn-sm" href="{% url 'accounts:audit_log' %}">View audit log</a>
         <a class="btn-light btn-sm" href="{% url 'admin:index' %}">Django admin</a>

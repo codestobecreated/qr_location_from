@@ -20,11 +20,10 @@
   </div>
   <div class="card card-pad">
     <h2 class="card-title mb-1">Role &amp; access</h2>
-    <p class="mb-4 text-sm text-slate-500"><strong>Super Admin</strong>: full access. <strong>Manager</strong>: leads and analytics for assigned locations. <strong>Staff</strong>: only leads assigned to them.</p>
+    <p class="mb-4 text-sm text-slate-500"><strong>Super Admin</strong>: full access. <strong>Manager</strong>: all leads and analytics, can assign leads. <strong>Staff</strong>: only leads assigned to them.</p>
     <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
       {% include "partials/field.html" with field=form.role %}
       {% include "partials/field.html" with field=form.is_active wrapper_class="sm:pt-8" %}
-      {% include "partials/field.html" with field=form.assigned_locations wrapper_class="sm:col-span-2" %}
     </div>
   </div>
   <div class="flex justify-end gap-2">

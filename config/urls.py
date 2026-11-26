@@ -12,8 +12,6 @@ urlpatterns = [
     path("django-admin/", admin.site.urls),
     path("accounts/", include("apps.accounts.urls")),
     path("dashboard/", include("apps.dashboard.urls")),
-    path("locations/", include("apps.locations.urls")),
-    path("stations/", include("apps.stations.urls")),
     path("qr-codes/", include("apps.qrcodes.urls")),
     path("leads/", include("apps.leads.urls")),
     path("analytics/", include("apps.analytics.urls")),

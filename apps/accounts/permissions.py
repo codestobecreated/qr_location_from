@@ -52,40 +52,26 @@ class RoleRequiredMixin(LoginRequiredMixin):
 
 # --- Data scoping -------------------------------------------------------------
 
-def scope_locations(qs, user):
-    if user.is_super_admin:
-        return qs
-    if user.is_manager:
-        return qs.filter(pk__in=user.assigned_locations.values("pk"))
-    return qs.none()
-
-
 def scope_stations(qs, user):
-    if user.is_super_admin:
+    if user.is_super_admin or user.is_manager:
         return qs
-    if user.is_manager:
-        return qs.filter(location__in=user.assigned_locations.values("pk"))
     return qs.none()
 
 
 def scope_leads(qs, user):
-    if user.is_super_admin:
+    if user.is_super_admin or user.is_manager:
         return qs
-    if user.is_manager:
-        return qs.filter(location__in=user.assigned_locations.values("pk"))
     return qs.filter(assigned_to=user)
 
 
 def scope_scans(qs, user):
-    if user.is_super_admin:
+    if user.is_super_admin or user.is_manager:
         return qs
-    if user.is_manager:
-        return qs.filter(location__in=user.assigned_locations.values("pk"))
     return qs.none()
 
 
 def can_manage_master_data(user):
-    """Create/edit/delete locations, stations and QR codes."""
+    """Manage the QR code and system settings."""
     return user.is_authenticated and user.is_super_admin
 
 
@@ -110,7 +96,7 @@ def _team_ids(manager):
 
 
 __all__ = [
-    "login_required", "role_required", "RoleRequiredMixin", "has_role", "scope_locations",
+    "login_required", "role_required", "RoleRequiredMixin", "has_role",
     "scope_stations", "scope_leads", "scope_scans", "can_manage_master_data", "can_assign_leads",
     "assignable_users", "SUPER_ADMIN", "MANAGER", "STAFF",
 ]

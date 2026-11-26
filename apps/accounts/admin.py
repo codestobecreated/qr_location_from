@@ -8,8 +8,8 @@ from .models import AuditLog, User
 class UserAdmin(BaseUserAdmin):
     list_display = ("username", "email", "first_name", "last_name", "role", "is_active", "last_login")
     list_filter = ("role", "is_active", "is_superuser")
-    filter_horizontal = ("assigned_locations", "groups", "user_permissions")
-    fieldsets = BaseUserAdmin.fieldsets + (("RELUX role", {"fields": ("role", "phone", "designation", "assigned_locations")}),)
+    filter_horizontal = ("assigned_stations", "groups", "user_permissions")
+    fieldsets = BaseUserAdmin.fieldsets + (("RELUX role", {"fields": ("role", "phone", "designation", "assigned_stations")}),)
     add_fieldsets = BaseUserAdmin.add_fieldsets + (("RELUX role", {"fields": ("email", "role")}),)
 
 

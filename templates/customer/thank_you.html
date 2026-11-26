@@ -12,7 +12,6 @@
       <div class="flex justify-between py-1"><span class="text-slate-500">Reference</span><span class="font-mono font-semibold text-slate-900">{{ lead.lead_id }}</span></div>
       <div class="flex justify-between gap-4 py-1"><span class="text-slate-500">Name</span><span class="text-right font-medium">{{ lead.full_name }}</span></div>
       <div class="flex justify-between gap-4 py-1"><span class="text-slate-500">Enquiry</span><span class="text-right font-medium">{{ lead.get_category_display }}</span></div>
-      <div class="flex justify-between gap-4 py-1"><span class="text-slate-500">Station</span><span class="text-right font-medium">{{ lead.station_name }}</span></div>
       <div class="flex justify-between gap-4 py-1"><span class="text-slate-500">Submitted</span><span class="text-right font-medium">{{ lead.submitted_at|date:"d M Y, h:i A" }}</span></div>
     </div>
   {% else %}
@@ -24,5 +23,4 @@
     {% if site_settings.support_phone %}<a href="tel:{{ site_settings.support_phone }}" class="btn-light">Call us</a>{% endif %}
   </div>
 </section>
-<p class="mt-6 text-center text-xs text-slate-500">{{ station.name }} · {{ location.name }}</p>
 {% endblock %}

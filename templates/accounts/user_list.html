@@ -30,7 +30,7 @@
   </div>
   <div class="table-wrap">
     <table class="table">
-      <thead><tr><th>User</th><th>Role</th><th>Assigned locations</th><th>Assigned leads</th><th>Last login</th><th>Status</th><th class="text-right">Actions</th></tr></thead>
+      <thead><tr><th>User</th><th>Role</th><th>Assigned leads</th><th>Last login</th><th>Status</th><th class="text-right">Actions</th></tr></thead>
       <tbody>
       {% for u in page %}
         <tr>
@@ -39,7 +39,6 @@
             <div class="text-xs text-slate-500">@{{ u.username }} · {{ u.email|default:"no email" }}</div>
           </td>
           <td>{% badge u.role u.role_label %}</td>
-          <td>{% if u.is_super_admin %}<span class="text-xs text-slate-500">All</span>{% elif u.role == 'manager' %}{{ u.location_count }}{% else %}—{% endif %}</td>
           <td>{{ u.lead_count }}</td>
           <td class="whitespace-nowrap text-xs">{{ u.last_login|date:"d M Y, H:i"|default:"Never" }}</td>
           <td>{% if u.is_active %}{% badge "active" %}{% else %}{% badge "inactive" %}{% endif %}</td>
@@ -55,7 +54,7 @@
           </td>
         </tr>
       {% empty %}
-        <tr><td colspan="7" class="py-12 text-center text-slate-500">No users match your filters.</td></tr>
+        <tr><td colspan="6" class="py-12 text-center text-slate-500">No users match your filters.</td></tr>
       {% endfor %}
       </tbody>
     </table>

@@ -3,7 +3,6 @@ from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm, Se
 from django.contrib.auth.password_validation import validate_password
 
 from apps.core.models import SystemSetting
-from apps.locations.models import Location
 
 from .models import User
 
@@ -47,16 +46,11 @@ class AdminSetPasswordForm(StyledFormMixin, SetPasswordForm):
 class UserForm(StyledFormMixin, forms.ModelForm):
     password1 = forms.CharField(label="Password", widget=forms.PasswordInput, required=False)
     password2 = forms.CharField(label="Confirm password", widget=forms.PasswordInput, required=False)
-    assigned_locations = forms.ModelMultipleChoiceField(
-        queryset=Location.objects.order_by("name"), required=False,
-        widget=forms.SelectMultiple(attrs={"size": 8}),
-        help_text="Managers only see leads and analytics for these locations. Hold Ctrl/Cmd to select several.",
-    )
 
     class Meta:
         model = User
         fields = ["username", "first_name", "last_name", "email", "phone", "designation", "role",
-                  "assigned_locations", "is_active"]
+                  "is_active"]
 
     def __init__(self, *args, **kwargs):
         self.request_user = kwargs.pop("request_user", None)
@@ -101,10 +95,6 @@ class UserForm(StyledFormMixin, forms.ModelForm):
             user.set_password(self.cleaned_data["password1"])
         if commit:
             user.save()
-            if user.role == User.Role.MANAGER:
-                user.assigned_locations.set(self.cleaned_data["assigned_locations"])
-            else:
-                user.assigned_locations.clear()
         return user
 
 

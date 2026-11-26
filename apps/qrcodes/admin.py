@@ -5,10 +5,10 @@ from .models import QRCodeMapping, QRScanEvent, QRTokenHistory
 
 @admin.register(QRCodeMapping)
 class QRCodeMappingAdmin(admin.ModelAdmin):
-    list_display = ("station", "token", "is_active", "created_at", "regeneration_count")
+    list_display = ("station", "qr_url", "is_active", "created_at")
     list_filter = ("is_active",)
-    search_fields = ("token", "station__name", "station__station_id")
-    readonly_fields = ("station", "token", "encoded_url", "image", "created_at", "created_by", "regenerated_at", "regeneration_count")
+    search_fields = ("token", "qr_url", "station__name", "station__station_id")
+    readonly_fields = ("station", "token", "qr_url", "encoded_url", "image", "created_at", "created_by")
 
     def has_add_permission(self, request):
         return False  # created automatically with each station

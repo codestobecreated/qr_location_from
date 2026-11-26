@@ -18,8 +18,8 @@ class NoteInline(admin.TabularInline):
 
 @admin.register(Lead)
 class LeadAdmin(admin.ModelAdmin):
-    list_display = ("lead_id", "full_name", "mobile", "category", "station_name", "location_name", "status", "submitted_at", "is_duplicate")
-    list_filter = ("status", "category", "is_duplicate", "source_state")
+    list_display = ("lead_id", "full_name", "mobile", "category", "station", "status", "submitted_at", "is_duplicate")
+    list_filter = ("status", "category", "is_duplicate")
     search_fields = ("lead_id", "full_name", "mobile", "email", "station_code", "qr_token")
     date_hierarchy = "submitted_at"
     inlines = [HistoryInline, NoteInline]

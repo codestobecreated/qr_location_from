@@ -2,7 +2,7 @@
 Public customer flow: QR scan -> enquiry form -> thank-you.
 
 SECURITY: the station is resolved ONLY from the QR token in the URL, looked up in the database.
-No station/location identifier is ever accepted from the customer.
+No station identifier is ever accepted from the customer.
 """
 import secrets
 import time
@@ -12,13 +12,14 @@ from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.http import HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_POST
 
 from apps.core.models import SystemSetting
 from apps.core.utils import UTM_KEYS, get_client_ip, request_metadata
-from apps.qrcodes.models import QRCodeMapping, QRScanEvent, QRTokenHistory
+from apps.qrcodes.models import QRCodeMapping, QRScanEvent, QRTokenHistory, get_main_qr
 
 from .forms import EnquiryForm
 from .models import Lead, LeadStatus, LeadStatusHistory
@@ -32,7 +33,7 @@ def _resolve(token):
     if not token or len(token) > 64:
         return None, None
     mapping = (
-        QRCodeMapping.objects.select_related("station", "station__location").filter(token=token).first()
+        QRCodeMapping.objects.select_related("station").filter(token=token).first()
     )
     if mapping:
         return mapping, None
@@ -41,7 +42,7 @@ def _resolve(token):
 
 def _accepting(mapping):
     station = mapping.station
-    return mapping.is_active and station.is_active and station.location.is_active
+    return mapping.is_active
 
 
 def _session_ready(request):
@@ -62,7 +63,7 @@ def _record_scan(request, mapping, accepting):
         is_repeat = bool(last and now - last < REPEAT_WINDOW_SECONDS)
         request.session[f"scan_ts:{mapping.token}"] = now
     event = QRScanEvent.objects.create(
-        mapping=mapping, station=mapping.station, location=mapping.station.location, token=mapping.token,
+        mapping=mapping, station=mapping.station, token=mapping.token,
         session_key=session_key or "", ip_address=meta["ip_address"], user_agent=meta["user_agent"],
         device_type=meta["device_type"], browser=meta["browser"], os=meta["os"], referer=meta["referer"],
         is_bot=is_bot, is_repeat=is_repeat, station_accepting=accepting,
@@ -82,9 +83,17 @@ def _issue_nonce(request, token):
     return nonce
 
 
+def _thanks_url(mapping):
+    return reverse("public:main_thank_you") if mapping.is_main else reverse("public:thank_you", args=[mapping.token])
+
+
+def _viewed_url(mapping):
+    return reverse("public:main_viewed") if mapping.is_main else reverse("public:form_viewed", args=[mapping.token])
+
+
 def _context(mapping, form, **extra):
     station = mapping.station
-    ctx = {"mapping": mapping, "station": station, "location": station.location, "form": form,
+    ctx = {"mapping": mapping, "station": station, "form": form, "viewed_url": _viewed_url(mapping),
            "settings_obj": SystemSetting.load()}
     ctx.update(extra)
     return ctx
@@ -101,14 +110,25 @@ def _rate_limited(request):
 
 
 @never_cache
+def main_qr(request):
+    """THE RELUX QR code: <site>/qr – opens the enquiry form."""
+    return _landing(request, get_main_qr())
+
+
+@never_cache
 def qr_landing(request, token):
-    if request.method not in ("GET", "POST", "HEAD"):
-        return HttpResponseNotAllowed(["GET", "POST"])
     mapping, retired = _resolve(token)
     if mapping is None:
         if retired is not None:
             return render(request, "customer/retired.html", {"retired": retired}, status=410)
         return render(request, "customer/invalid.html", status=404)
+    return _landing(request, mapping)
+
+
+def _landing(request, mapping):
+    if request.method not in ("GET", "POST", "HEAD"):
+        return HttpResponseNotAllowed(["GET", "POST"])
+    token = mapping.token
 
     accepting = _accepting(mapping)
     if request.method == "HEAD":
@@ -136,7 +156,7 @@ def qr_landing(request, token):
 
     if form.cleaned_data.get("website"):
         # Honeypot filled -> silently drop the bot submission.
-        return redirect("public:thank_you", token=token)
+        return redirect(_thanks_url(mapping))
 
     submitted_key = form.cleaned_data.get("submission_key") or ""
     nonces = request.session.get(f"nonces:{token}") or []
@@ -145,7 +165,7 @@ def qr_landing(request, token):
     existing = Lead.objects.filter(submission_key=submitted_key).first() if submitted_key else None
     if existing and existing.qr_mapping_id == mapping.pk:
         request.session[f"thanks:{token}"] = existing.pk
-        return redirect("public:thank_you", token=token)
+        return redirect(_thanks_url(mapping))
 
     if _rate_limited(request):
         return render(request, "customer/enquiry.html",
@@ -158,12 +178,11 @@ def qr_landing(request, token):
     if submitted_key in nonces:
         request.session[f"nonces:{token}"] = [n for n in nonces if n != submitted_key]
     request.session[f"thanks:{token}"] = lead.pk
-    return redirect("public:thank_you", token=token)
+    return redirect(_thanks_url(mapping))
 
 
 def _create_lead(request, mapping, data, key):
     station = mapping.station
-    location = station.location
     settings_obj = SystemSetting.load()
     meta = request_metadata(request)
     scan_event = None
@@ -184,10 +203,9 @@ def _create_lead(request, mapping, data, key):
             lead = Lead.objects.create(
                 full_name=data["full_name"], mobile=data["mobile"], email=data.get("email", ""),
                 category=data["category"], message=data.get("message", ""), consent=True, consent_at=now,
-                location=location, station=station, qr_mapping=mapping, qr_token=mapping.token,
-                scan_event=scan_event, location_code=location.location_id, location_name=location.name,
+                station=station, qr_mapping=mapping, qr_token=mapping.token, scan_event=scan_event,
                 station_code=station.station_id, station_name=station.name,
-                source_city=station.city, source_state=station.state, submitted_at=now,
+                submitted_at=now,
                 ip_address=meta["ip_address"], user_agent=meta["user_agent"], device_type=meta["device_type"],
                 browser=meta["browser"], os=meta["os"], referer=meta["referer"],
                 submission_key=key, is_duplicate=original is not None, duplicate_of=original,
@@ -206,19 +224,39 @@ def _create_lead(request, mapping, data, key):
 
 
 @never_cache
+def main_thank_you(request):
+    return _thanks(request, get_main_qr())
+
+
+@never_cache
 def thank_you(request, token):
     mapping, _ = _resolve(token)
     if mapping is None:
         return render(request, "customer/invalid.html", status=404)
+    return _thanks(request, mapping)
+
+
+def _thanks(request, mapping):
+    token = mapping.token
     lead_id = request.session.get(f"thanks:{token}")
     lead = Lead.objects.filter(pk=lead_id, qr_mapping=mapping).first() if lead_id else None
     return render(request, "customer/thank_you.html", _context(mapping, None, lead=lead))
 
 
 @require_POST
+def main_viewed(request):
+    return _mark_viewed(request, get_main_qr())
+
+
+@require_POST
 def form_view_beacon(request, token):
-    """Called by the enquiry page's JS once it renders: proves a real browser displayed the form."""
     mapping, _ = _resolve(token)
+    return _mark_viewed(request, mapping)
+
+
+def _mark_viewed(request, mapping):
+    """Called by the enquiry page's JS once it renders: proves a real browser displayed the form."""
+    token = mapping.token if mapping else ""
     scan_id = request.session.get(f"scan_id:{token}")
     if mapping and scan_id:
         QRScanEvent.objects.filter(pk=scan_id, mapping=mapping, form_viewed=False).update(

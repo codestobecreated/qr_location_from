@@ -17,7 +17,7 @@ ROLE_GROUPS = {
 GROUP_PERMISSIONS = {
     "Super Admin": "__all__",
     "Manager": [
-        "locations.view_location", "stations.view_chargingstation", "qrcodes.view_qrcodemapping",
+        "stations.view_chargingstation", "qrcodes.view_qrcodemapping",
         "qrcodes.view_qrscanevent", "leads.view_lead", "leads.change_lead", "leads.add_leadnote",
         "leads.view_leadnote", "leads.add_leadassignment", "leads.view_leadstatushistory",
     ],
@@ -26,7 +26,7 @@ GROUP_PERMISSIONS = {
 
 
 def ensure_role_groups():
-    app_labels = ["accounts", "locations", "stations", "qrcodes", "leads", "core"]
+    app_labels = ["accounts", "stations", "qrcodes", "leads", "core"]
     for name, perms in GROUP_PERMISSIONS.items():
         group, _ = Group.objects.get_or_create(name=name)
         if perms == "__all__":

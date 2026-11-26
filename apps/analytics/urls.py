@@ -6,6 +6,5 @@ app_name = "analytics"
 
 urlpatterns = [
     path("", views.overview, name="overview"),
-    path("locations/<int:pk>/", views.location_analytics, name="location"),
-    path("stations/<int:pk>/", views.station_analytics, name="station"),
+    path("qr/<int:pk>/", views.station_analytics, name="station"),
 ]

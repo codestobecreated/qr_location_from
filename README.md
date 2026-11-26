@@ -1,9 +1,11 @@
 # RELUX ELECTRIC – QR-Based Lead Management System
 
-A single Django project (templates + Tailwind CSS + vanilla JavaScript, SQLite) that gives every
-RELUX ELECTRIC charging station its own **permanent, unique QR code**. Customers scan it with Google
-Lens or any phone camera, the station-specific enquiry form opens, and the lead lands in an admin
-dashboard with location-wise and station-wise tracking.
+A single Django project (templates + Tailwind CSS + vanilla JavaScript) for RELUX ELECTRIC enquiries.
+
+**There is exactly one QR code.** It points to **`<your site>/qr`** (e.g. `https://qr.reluxelectric.com/qr`).
+A customer scans it → the enquiry form opens → the submitted lead is stored → the dashboard shows
+**leads per day, week, month and year**. The QR and its URL are created once and never change –
+no matter what is updated, deployed or renamed. No location, station or address data exists anywhere.
 
 No React / Node / DRF / PostgreSQL – everything runs inside one Django project.
 
@@ -14,15 +16,14 @@ No React / Node / DRF / PostgreSQL – everything runs inside one Django project
 | Area | What it does |
 | --- | --- |
 | Authentication | Django auth login/logout, password validators, session expiry, login lockout after 5 failures, audit log of logins |
-| Roles | **Super Admin** (everything), **Manager** (assigned locations: leads, analytics, read-only stations/QR), **Staff** (only leads assigned to them). Synced to Django Groups *Super Admin / Manager / Staff* |
-| Locations | Add / edit / view / delete (blocked when stations or leads exist), search, filter (city, state, status), sort, activate/deactivate (single & bulk), Excel/CSV import (20,000 rows max per file) and export. Auto IDs `LOC-000001` |
-| Charging stations | Add / edit / view, filter by location/city/state/status/charger type, activate/deactivate/maintenance, Excel/CSV import & export, QR preview. Auto IDs `STN-000001` |
-| Permanent QR codes | 128-bit `secrets.token_urlsafe` token per station, created automatically. Token and station mapping can never be edited or deleted (model-level guard). Branded PNG, print-ready A4 PDF (1/2/4/6 per page), bulk ZIP with manifest. Regeneration needs typed Station ID + reason; old token kept in history and shows "QR replaced" (never redirected) |
-| Customer enquiry | `/q/<token>/` – no login. Station resolved **only** from the token in the database. Shows logo, station, location, city/state, address, form (name, mobile, email, category, message, privacy consent). CSRF, server validation, honeypot, per-IP rate limit, one-time form key against double submits, duplicate flagging (same mobile + station within N minutes), thank-you page with reference ID |
+| Roles | **Super Admin** (everything), **Manager** (all leads and analytics, assigns leads), **Staff** (only leads assigned to them) |
+| QR Code | Menu **QR Code** shows the one QR: image, its fixed link `/qr`, PNG / print PDF (1 or 4 per A4), scans, leads, and a pause/switch-on button. There is no create, import, rename or regenerate |
+| Permanent QR URL | The QR is created automatically on first use with URL `QR_BASE_URL + "/qr"`, stored in the database (`QRCodeMapping.qr_url`, `is_main=True`) and never recalculated. Token/URL cannot be edited or deleted. The `/qr` route is pinned by tests |
+| Customer enquiry | `/qr` – no login. Shows **only the RELUX logo and the enquiry form** (name, mobile, email, category, message, privacy consent). CSRF, validation, honeypot, per-IP rate limit, double-submit protection, duplicate flagging, thank-you page `/qr/thank-you/` with reference ID |
 | Scan tracking | Every visit recorded with device/OS/browser, UTM parameters, bot detection, repeat-open detection, form-visit beacon, submission flag. Funnel: **Scan → Form visit → Submission → Lead → Conversion** |
-| Lead management | Searchable, filterable (location, station, city, state, category, status, assignee, date range, duplicates), sortable, paginated. Detail page with locked source, status updates (full history), follow-up notes with dates, assignment with history, bulk status/assign, Excel/CSV export of the filtered list |
-| Analytics | Funnel cards, daily/weekly/monthly trends, category mix, location-wise & station-wise tables (sortable, searchable), city/state breakdowns, top/bottom 10 stations, device mix, drill-down location → stations → leads |
-| Reports | Full management workbook, station/location performance, daily/weekly/monthly, city/state/category, lead list, raw scan log – Excel or CSV |
+| Lead management | Searchable, filterable (category, status, assignee, date range, duplicates), sortable, paginated. Status history, follow-up notes, assignment, bulk actions, Excel/CSV export |
+| Dashboard & analytics | Leads **today / this week / this month / this year / all time**, charts and tables per **day (30 days), month (12 months) and year**, enquiry types, scan → form → lead funnel, devices |
+| Reports | Full workbook, daily/weekly/monthly/yearly, category-wise, lead list, raw scan log – Excel or CSV |
 | Settings | Profile & password for everyone; Super Admin edits company info, enquiry texts, privacy policy, duplicate window and rate limit; audit log viewer |
 
 All numbers come from live database queries – there are no hard-coded statistics.
@@ -37,8 +38,8 @@ relux_lead_management/
 ├── apps/
 │   ├── core/                shared models (SystemSetting), exports, UA parsing, template tags, seed command
 │   ├── accounts/            User (role), AuditLog, login, users, settings, permissions/scoping
-│   ├── locations/           Location model, CRUD, import/export
-│   ├── stations/            ChargingStation model, CRUD, import/export, QR auto-creation signal
+│   ├── locations/           (removed feature – kept only for its delete migration)
+│   ├── stations/            the named-QR model (historical app name), QR auto-creation signal
 │   ├── qrcodes/             QRCodeMapping, QRTokenHistory, QRScanEvent, PNG/PDF/ZIP generation
 │   ├── leads/               Lead, LeadStatusHistory, LeadNote, LeadAssignment, public QR views
 │   ├── dashboard/           overview dashboard
@@ -55,17 +56,16 @@ relux_lead_management/
 ### Data model
 
 ```
-Location 1 ──< ChargingStation 1 ── 1 QRCodeMapping 1 ──< QRTokenHistory (retired tokens)
+QR name (stations.ChargingStation) 1 ── 1 QRCodeMapping (token + permanent qr_url)
                      │                    │
                      ├──< QRScanEvent >───┘
                      └──< Lead >── LeadStatusHistory, LeadNote, LeadAssignment
-User (role, assigned_locations) ;  AuditLog ;  SystemSetting (singleton)
+User (role, assigned QR codes) ;  AuditLog ;  SystemSetting (singleton)
 ```
 
-* `Lead.location`, `Lead.station`, `Lead.qr_mapping` use `PROTECT` and are also snapshotted
-  (`location_code`, `station_name`, `qr_token`, …). `Lead.save()` refuses to change them.
-* Stations and QR mappings use `PROTECT`; locations with stations/leads cannot be deleted –
-  deactivate instead.
+* `Lead.station` and `Lead.qr_mapping` use `PROTECT` and are also snapshotted
+  (`station_code`, `station_name`, `qr_token`). `Lead.save()` refuses to change them.
+* QR codes use `PROTECT` and cannot be deleted – deactivate instead; the URL stays the same.
 
 ---
 
@@ -101,7 +101,7 @@ Open http://127.0.0.1:8000/ and sign in.
 **Optional sample data (development only – refuses to run with DEBUG off):**
 
 ```powershell
-python manage.py seed_demo_data --locations 30 --stations-per-location 2 --leads 400
+python manage.py seed_demo_data --stations 60 --leads 400      # 60 sample QR codes
 ```
 
 **Run the tests:**
@@ -121,17 +121,17 @@ re-rendered automatically with the new base URL the next time they are previewed
 
 ## 4. How the QR flow works
 
-1. Creating a station (form, import or admin) fires a signal that creates its `QRCodeMapping` with a
-   new cryptographically secure token that has never been used by any station (current or retired).
+1. Creating a QR (QR Codes → + Create QR, import or admin) creates its `QRCodeMapping` with a new
+   cryptographically secure token that has never been used before.
 2. The printed code encodes `QR_BASE_URL/q/<token>/`.
 3. On scan, `apps/leads/public_views.py` looks the token up in the database – nothing else from the
-   request is used to pick the station.
+   request is used to pick the QR.
    * unknown token → "QR not recognised" (404)
    * retired token → "QR replaced" (410), no redirect
-   * station, location or QR inactive → "not accepting enquiries", no redirect, no lead saved
-   * otherwise the station form is shown and a `QRScanEvent` is recorded
+   * QR inactive → "not accepting enquiries", no redirect, no lead saved
+   * otherwise the enquiry form is shown and a `QRScanEvent` is recorded
 4. When the page renders in a real browser, a small beacon marks the scan as a *form visit*.
-5. On submit the lead is saved with the station/location/token from the database, plus device,
+5. On submit the lead is saved with the QR/token from the database, plus device,
    browser and UTM data; the scan is marked *submitted*; the customer sees a thank-you page.
 
 **Choose the production `QR_BASE_URL` before printing stickers.** Tokens never change, but the
@@ -142,17 +142,10 @@ redirecting `/q/*` to the new one.
 
 ## 5. Excel / CSV import formats
 
-Download the templates from **Locations → Import** and **Charging Stations → Import**.
+Download the template from **QR Codes → Import Excel/CSV**.
 
-*Locations:* `Location ID (optional)`, `Location Name*`, `Address*`, `City*`, `District`, `State*`,
-`PIN Code*`, `Latitude`, `Longitude`, `Contact Person`, `Contact Number`, `Status (Active/Inactive)`.
-Rows matching an existing Location ID (or the same name + PIN) are updated when "update existing" is ticked.
+*QR codes:* `QR ID (optional, only to rename)`, `QR Name*`. Each new row gets its own permanent QR code; images are rendered on first preview/download.
 
-*Stations:* `Station ID (optional, to update)`, `Location ID*`, `Station Name*`, `Station Address*`,
-`City`, `State`, `Charger Type`, `Charger Capacity (kW)`, `Status`. Each new station automatically
-gets its permanent QR code; images are rendered on first preview/download.
-
-Import 1,000+ locations first, then their stations.
 
 ---
 
@@ -252,7 +245,7 @@ SQLite is a single file. Back it up safely while the app runs:
 sqlite3 /path/to/db.sqlite3 ".backup '/backups/relux_qr_$(date +%F).sqlite3'"
 ```
 
-Also back up `media/qrcodes/` (images can be regenerated, tokens cannot – tokens live in the DB).
+Also back up `media/qrcodes/` (images can be re-rendered; tokens and QR URLs live in the DB).
 
 ### 6.6 Tailwind CSS in production (optional, no Node.js)
 
@@ -271,9 +264,9 @@ When `static/css/tailwind.build.css` exists, every page uses it automatically.
 
 ## 7. Security summary
 
-* Station identity comes only from the stored token; customer-submitted IDs are ignored.
+* The QR is identified only from the stored token; customer-submitted IDs are ignored.
 * Tokens: 128-bit random, globally unique across current and retired tokens, immutable, not deletable.
-* Deactivation never redirects a QR code; regeneration is confirmed, reasoned, audited and kept in history.
+* Deactivation never redirects a QR code, and QR codes can never be regenerated or re-assigned.
 * Lead source fields are immutable at the model level.
 * CSRF on every form; login lockout; per-IP enquiry rate limit; honeypot; bot filtering in analytics.
 * Role-based data scoping on every list, detail, export and analytics query.

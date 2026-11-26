@@ -14,9 +14,9 @@ class User(AbstractUser):
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.STAFF, db_index=True)
     phone = models.CharField(max_length=20, blank=True)
     designation = models.CharField(max_length=100, blank=True)
-    # Locations a Manager is responsible for. Super Admins see everything regardless.
-    assigned_locations = models.ManyToManyField(
-        "locations.Location", blank=True, related_name="managers"
+    # Charging stations a Manager is responsible for. Super Admins see everything regardless.
+    assigned_stations = models.ManyToManyField(
+        "stations.ChargingStation", blank=True, related_name="managers"
     )
 
     class Meta:

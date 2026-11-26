@@ -1,22 +1,21 @@
-import io
 import shutil
 import tempfile
-import zipfile
+from datetime import timedelta
 
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
-from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
-from django.urls import reverse
+from django.urls import NoReverseMatch, reverse
+from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.leads.models import Lead, LeadStatus
-from apps.locations.models import Location
-from apps.qrcodes.models import QRCodeMapping, QRScanEvent, QRTokenHistory
+from apps.qrcodes.models import QRCodeMapping, QRScanEvent, get_main_qr
+from apps.qrcodes.services import ensure_image
 from apps.stations.models import ChargingStation
 
 MOBILE_UA = ("Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) "
              "Chrome/126.0 Mobile Safari/537.36")
-
 TEMP_MEDIA = tempfile.mkdtemp()
 
 
@@ -28,155 +27,150 @@ class BaseCase(TestCase):
         shutil.rmtree(TEMP_MEDIA, ignore_errors=True)
 
     def setUp(self):
+        cache.clear()  # independent per-IP rate-limit counters for every test
         self.admin = User.objects.create_user("boss", "boss@example.com", "Str0ng-Passw0rd!", role=User.Role.SUPER_ADMIN)
-        self.loc = Location.objects.create(name="Chennai Hub", address="GST Road", city="Chennai", state="Tamil Nadu", pincode="600045")
-        self.loc2 = Location.objects.create(name="Pune Hub", address="FC Road", city="Pune", state="Maharashtra", pincode="411004")
-        self.station = ChargingStation.objects.create(location=self.loc, name="RELUX Tambaram Station", address="GST Road")
-        self.station2 = ChargingStation.objects.create(location=self.loc2, name="RELUX Pune Station", address="FC Road")
-        self.mapping = self.station.qr_mapping
-        self.mapping2 = self.station2.qr_mapping
+        self.qr = get_main_qr()
 
-    def enquiry(self, token, **overrides):
-        url = reverse("public:qr_landing", args=[token])
-        r = self.client.get(url, HTTP_USER_AGENT=MOBILE_UA)
+    def enquiry(self, path="/qr", **overrides):
+        r = self.client.get(path, HTTP_USER_AGENT=MOBILE_UA)
         key = r.context["form"]["submission_key"].value() if r.context and r.context.get("form") else ""
         data = {"full_name": "Arun Kumar", "mobile": "9876543210", "email": "arun@example.com",
                 "category": "franchise", "message": "Interested", "consent": "on", "submission_key": key}
         data.update(overrides)
-        return self.client.post(url, data, HTTP_USER_AGENT=MOBILE_UA), key
+        return self.client.post(path, data, HTTP_USER_AGENT=MOBILE_UA), key
 
 
-class QRMappingTests(BaseCase):
-    def test_station_gets_unique_permanent_qr(self):
-        self.assertTrue(self.mapping.token)
-        self.assertNotEqual(self.mapping.token, self.mapping2.token)
-        self.assertEqual(self.mapping.public_url, f"https://leads.example.com/q/{self.mapping.token}/")
-        self.assertGreaterEqual(len(self.mapping.token), 20)
+class OneQRTests(BaseCase):
+    """There is exactly one QR; its URL is <site>/qr and it never changes."""
 
-    def test_printed_card_rendered_with_station_id(self):
-        from apps.qrcodes.services import ensure_image
+    def test_single_main_qr_with_fixed_url(self):
+        self.assertEqual(self.qr.qr_url, "https://leads.example.com/qr")
+        self.assertEqual(reverse("public:main_qr"), "/qr")
+        self.assertEqual(get_main_qr().pk, self.qr.pk)                 # never a second one
+        self.assertEqual(QRCodeMapping.objects.filter(is_main=True).count(), 1)
 
-        m = QRCodeMapping.objects.get(pk=self.mapping.pk)
-        ensure_image(m)
-        self.assertTrue(m.image)
-        self.assertFalse(m.image_is_stale)
-        self.assertTrue(self.station.station_id.startswith("STN-"))
+    def test_url_survives_setting_changes_and_rename(self):
+        url = self.qr.qr_url
+        with override_settings(QR_BASE_URL="https://some-other-domain.example"):
+            m = get_main_qr()
+            self.assertEqual(m.qr_url, url)
+            ensure_image(m)
+            self.assertEqual(m.encoded_url, url)                       # printed QR still encodes /qr
+        station = self.qr.station
+        station.name = "Renamed"
+        station.save()
+        self.assertEqual(QRCodeMapping.objects.get(pk=self.qr.pk).qr_url, url)
 
-    def test_editing_station_keeps_token(self):
-        token = self.mapping.token
-        self.station.name = "Renamed Station"
-        self.station.save()
-        self.station.refresh_from_db()
-        self.assertEqual(self.station.qr_mapping.token, token)
-
-    def test_token_and_station_cannot_be_changed_or_deleted(self):
-        self.mapping.token = "hijacked"
+    def test_qr_cannot_be_changed_or_deleted(self):
+        for field, value in (("token", "x"), ("qr_url", "https://evil.example/qr"), ("is_main", False)):
+            m = QRCodeMapping.objects.get(pk=self.qr.pk)
+            setattr(m, field, value)
+            with self.assertRaises(ValidationError, msg=field):
+                m.save()
         with self.assertRaises(ValidationError):
-            self.mapping.save()
-        m = QRCodeMapping.objects.get(pk=self.mapping.pk)
-        m.station = self.station2
-        with self.assertRaises(ValidationError):
-            m.save()
-        with self.assertRaises(ValidationError):
-            QRCodeMapping.objects.get(pk=self.mapping.pk).delete()
+            QRCodeMapping.objects.get(pk=self.qr.pk).delete()
 
-    def test_regenerate_preserves_history_and_retires_old_token(self):
-        old = self.mapping.token
-        new_mapping = self.mapping.regenerate(self.admin, "Sticker damaged")
-        self.assertNotEqual(new_mapping.token, old)
-        self.assertTrue(QRTokenHistory.objects.filter(token=old, station=self.station).exists())
-        r = self.client.get(reverse("public:qr_landing", args=[old]), HTTP_USER_AGENT=MOBILE_UA)
-        self.assertEqual(r.status_code, 410)
-        r = self.client.get(reverse("public:qr_landing", args=[new_mapping.token]), HTTP_USER_AGENT=MOBILE_UA)
-        self.assertContains(r, "RELUX Tambaram Station")
+    def test_no_create_import_regenerate_location_or_station_pages(self):
+        self.client.force_login(self.admin)
+        for path in ("/qr-codes/create/", "/qr-codes/import/", "/qr-codes/1/regenerate/", "/locations/", "/stations/"):
+            self.assertEqual(self.client.get(path).status_code, 404, path)
+        for name in ("qrcodes:create", "qrcodes:import", "qrcodes:regenerate", "locations:list", "stations:list"):
+            with self.assertRaises(NoReverseMatch):
+                reverse(name)
+
+    def test_qr_page_png_pdf(self):
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("qrcodes:list"))
+        self.assertContains(r, "https://leads.example.com/qr")
+        self.assertEqual(self.client.get(reverse("qrcodes:png", args=[self.qr.pk]))["Content-Type"], "image/png")
+        pdf = b"".join(self.client.get(reverse("qrcodes:pdf", args=[self.qr.pk]) + "?per_page=4").streaming_content)
+        self.assertTrue(pdf.startswith(b"%PDF"))
+
+    def test_pausing_keeps_url(self):
+        self.client.force_login(self.admin)
+        self.client.post(reverse("qrcodes:toggle", args=[self.qr.pk]))
+        m = QRCodeMapping.objects.get(pk=self.qr.pk)
+        self.assertFalse(m.is_active)
+        self.assertEqual(m.qr_url, "https://leads.example.com/qr")
 
 
-class PublicFlowTests(BaseCase):
-    def test_scan_shows_station_and_records_event(self):
-        r = self.client.get(reverse("public:qr_landing", args=[self.mapping.token]), HTTP_USER_AGENT=MOBILE_UA)
-        self.assertContains(r, "RELUX Tambaram Station")
-        self.assertContains(r, "Chennai Hub")
-        ev = QRScanEvent.objects.get()
-        self.assertEqual(ev.station, self.station)
-        self.assertFalse(ev.is_bot)
-        self.assertEqual(ev.device_type, "Mobile")
+class PublicFormTests(BaseCase):
+    def test_scan_shows_only_the_form_and_records_scan(self):
+        for path in ("/qr", "/qr/"):
+            r = self.client.get(path, HTTP_USER_AGENT=MOBILE_UA)
+            self.assertEqual(r.status_code, 200)
+            self.assertContains(r, 'name="full_name"')
+            # Ignore the enquiry-type option "EV Charging Station Installation" – it is not location data.
+            page = r.content.decode().replace("EV Charging Station Installation", "")
+            for text in ("Station", "Location", "City", "Address", "You are at"):
+                self.assertNotIn(text, page)
+        self.assertEqual(QRScanEvent.objects.filter(mapping=self.qr, is_bot=False).count(), 2)
 
     def test_bot_scan_flagged(self):
-        self.client.get(reverse("public:qr_landing", args=[self.mapping.token]), HTTP_USER_AGENT="WhatsApp/2.23.20.0 A")
+        self.client.get("/qr", HTTP_USER_AGENT="WhatsApp/2.23.20.0 A")
         self.assertTrue(QRScanEvent.objects.get().is_bot)
 
-    def test_invalid_token_404(self):
-        r = self.client.get("/q/not-a-real-token/", HTTP_USER_AGENT=MOBILE_UA)
-        self.assertEqual(r.status_code, 404)
-
-    def test_submission_creates_lead_bound_to_token_station(self):
-        # Attempt to inject another station – must be ignored.
-        r, _ = self.enquiry(self.mapping.token, station=self.station2.pk, station_id=self.station2.pk,
-                            location=self.loc2.pk)
-        self.assertRedirects(r, reverse("public:thank_you", args=[self.mapping.token]))
+    def test_submit_stores_lead(self):
+        r, _ = self.enquiry()
+        self.assertRedirects(r, "/qr/thank-you/")
         lead = Lead.objects.get()
-        self.assertEqual(lead.station, self.station)
-        self.assertEqual(lead.location, self.loc)
-        self.assertEqual(lead.qr_token, self.mapping.token)
-        self.assertEqual(lead.station_code, self.station.station_id)
+        self.assertEqual(lead.qr_mapping, self.qr)
+        self.assertEqual((lead.full_name, lead.mobile, lead.category), ("Arun Kumar", "9876543210", "franchise"))
         self.assertEqual(lead.status, LeadStatus.NEW)
-        self.assertTrue(lead.status_history.exists())
         self.assertTrue(QRScanEvent.objects.get().submitted)
-        r = self.client.get(reverse("public:thank_you", args=[self.mapping.token]))
-        self.assertContains(r, lead.lead_id)
+        self.assertContains(self.client.get("/qr/thank-you/"), lead.lead_id)
 
     def test_double_submit_same_form_creates_one_lead(self):
-        url = reverse("public:qr_landing", args=[self.mapping.token])
-        r, key = self.enquiry(self.mapping.token)
-        data = {"full_name": "Arun Kumar", "mobile": "9876543210", "category": "franchise", "consent": "on",
-                "submission_key": key}
-        self.client.post(url, data, HTTP_USER_AGENT=MOBILE_UA)
+        r, key = self.enquiry()
+        self.client.post("/qr", {"full_name": "Arun Kumar", "mobile": "9876543210", "category": "franchise",
+                                 "consent": "on", "submission_key": key}, HTTP_USER_AGENT=MOBILE_UA)
         self.assertEqual(Lead.objects.count(), 1)
 
-    def test_repeat_enquiry_in_window_flagged_duplicate(self):
-        self.enquiry(self.mapping.token)
-        self.enquiry(self.mapping.token)
+    def test_repeat_enquiry_flagged_duplicate(self):
+        self.enquiry()
+        self.enquiry()
         self.assertEqual(Lead.objects.count(), 2)
         self.assertEqual(Lead.objects.filter(is_duplicate=False).count(), 1)
 
     def test_validation_errors(self):
-        r, _ = self.enquiry(self.mapping.token, mobile="12345", consent="")
+        r, _ = self.enquiry(mobile="12345", consent="")
         self.assertEqual(r.status_code, 400)
         self.assertEqual(Lead.objects.count(), 0)
 
-    def test_inactive_station_does_not_accept_or_redirect(self):
-        ChargingStation.objects.filter(pk=self.station.pk).update(status="inactive")
-        r = self.client.get(reverse("public:qr_landing", args=[self.mapping.token]), HTTP_USER_AGENT=MOBILE_UA)
-        self.assertContains(r, "not accepting enquiries")
-        self.assertNotContains(r, "RELUX Pune Station")
-        self.client.post(reverse("public:qr_landing", args=[self.mapping.token]),
-                         {"full_name": "A B", "mobile": "9876543210", "category": "general", "consent": "on"})
+    def test_paused_qr_does_not_accept(self):
+        QRCodeMapping.objects.filter(pk=self.qr.pk).update(is_active=False)
+        self.assertContains(self.client.get("/qr", HTTP_USER_AGENT=MOBILE_UA), "not accepting enquiries")
+        self.client.post("/qr", {"full_name": "A B", "mobile": "9876543210", "category": "general", "consent": "on"})
         self.assertEqual(Lead.objects.count(), 0)
 
     def test_honeypot_drops_submission(self):
-        self.enquiry(self.mapping.token, website="http://spam")
+        self.enquiry(website="http://spam")
         self.assertEqual(Lead.objects.count(), 0)
 
     def test_lead_source_is_immutable(self):
-        self.enquiry(self.mapping.token)
+        self.enquiry()
         lead = Lead.objects.get()
-        lead.station = self.station2
+        lead.full_name = "Changed"
         with self.assertRaises(ValidationError):
             lead.save()
         lead = Lead.objects.get()
         lead.status = LeadStatus.CONTACTED
-        lead.save()  # workflow fields may change
+        lead.save()
+
+    def test_older_q_token_links_still_work(self):
+        old = ChargingStation.objects.create(name="Old sticker").qr_mapping
+        r = self.client.get(f"/q/{old.token}/", HTTP_USER_AGENT=MOBILE_UA)
+        self.assertContains(r, 'name="full_name"')
 
 
-class AdminAndPermissionTests(BaseCase):
+class AdminTests(BaseCase):
     def setUp(self):
         super().setUp()
         self.manager = User.objects.create_user("mgr", "m@example.com", "Str0ng-Passw0rd!", role=User.Role.MANAGER)
-        self.manager.assigned_locations.add(self.loc)
         self.staff = User.objects.create_user("stf", "s@example.com", "Str0ng-Passw0rd!", role=User.Role.STAFF)
-        self.enquiry(self.mapping.token)
+        self.enquiry()
         self.client.logout()
-        self.enquiry(self.mapping2.token, mobile="9123456780")
+        self.enquiry(mobile="9123456780")
         self.client.logout()
 
     def test_login_required(self):
@@ -188,16 +182,14 @@ class AdminAndPermissionTests(BaseCase):
         self.client.force_login(self.admin)
         lead = Lead.objects.first()
         urls = [
-            reverse("dashboard:home"), reverse("locations:list"), reverse("locations:detail", args=[self.loc.pk]),
-            reverse("locations:create"), reverse("stations:list"), reverse("stations:detail", args=[self.station.pk]),
-            reverse("stations:create"), reverse("qrcodes:list"), reverse("qrcodes:detail", args=[self.mapping.pk]),
-            reverse("qrcodes:regenerate", args=[self.mapping.pk]), reverse("leads:list"),
+            reverse("dashboard:home"), reverse("qrcodes:list"), reverse("leads:list"),
             reverse("leads:detail", args=[lead.pk]), reverse("analytics:overview"),
-            reverse("analytics:overview") + "?tab=stations&period=weekly&range=all",
+            reverse("analytics:overview") + "?period=weekly&range=all",
             reverse("analytics:overview") + "?period=monthly&range=365d",
-            reverse("analytics:location", args=[self.loc.pk]), reverse("analytics:station", args=[self.station.pk]),
-            reverse("reports:index"), reverse("accounts:user_list"), reverse("accounts:settings"),
-            reverse("accounts:audit_log"), reverse("locations:import"), reverse("stations:import"),
+            reverse("analytics:overview") + "?period=yearly&range=all",
+            reverse("analytics:station", args=[self.qr.station.pk]),
+            reverse("reports:index"), reverse("accounts:user_list"), reverse("accounts:user_create"),
+            reverse("accounts:settings"), reverse("accounts:audit_log"),
         ]
         for url in urls:
             with self.subTest(url=url):
@@ -205,93 +197,44 @@ class AdminAndPermissionTests(BaseCase):
 
     def test_staff_scope(self):
         self.client.force_login(self.staff)
-        self.assertEqual(self.client.get(reverse("locations:list")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("qrcodes:list")).status_code, 403)
         self.assertEqual(self.client.get(reverse("analytics:overview")).status_code, 403)
-        r = self.client.get(reverse("leads:list"))
-        self.assertEqual(len(r.context["page"].object_list), 0)
+        self.assertEqual(len(self.client.get(reverse("leads:list")).context["page"].object_list), 0)
         lead = Lead.objects.first()
-        self.assertEqual(self.client.get(reverse("leads:detail", args=[lead.pk])).status_code, 404)
         lead.assigned_to = self.staff
         lead.save()
         self.assertEqual(self.client.get(reverse("leads:detail", args=[lead.pk])).status_code, 200)
-        r = self.client.post(reverse("leads:update_status", args=[lead.pk]), {"status": "contacted"})
+        self.client.post(reverse("leads:update_status", args=[lead.pk]), {"status": "contacted"})
         lead.refresh_from_db()
         self.assertEqual(lead.status, "contacted")
         self.assertEqual(lead.status_history.count(), 2)
 
-    def test_manager_sees_only_assigned_locations(self):
+    def test_manager_sees_all_leads(self):
         self.client.force_login(self.manager)
-        r = self.client.get(reverse("leads:list"))
-        stations = {l.station_id for l in r.context["page"].object_list}
-        self.assertEqual(stations, {self.station.pk})
-        self.assertEqual(self.client.get(reverse("locations:create")).status_code, 403)
-        self.assertEqual(self.client.get(reverse("locations:detail", args=[self.loc2.pk])).status_code, 404)
+        self.assertEqual(len(self.client.get(reverse("leads:list")).context["page"].object_list), 2)
+        self.assertEqual(self.client.get(reverse("qrcodes:list")).status_code, 200)
 
-    def test_exports_and_downloads(self):
+    def test_exports_and_reports(self):
         self.client.force_login(self.admin)
-        for name in ("leads:export", "locations:export", "stations:export"):
-            for fmt in ("csv", "xlsx"):
-                r = self.client.get(reverse(name) + f"?format={fmt}")
-                self.assertEqual(r.status_code, 200, name)
-                body = b"".join(r.streaming_content) if r.streaming else r.content
-                self.assertTrue(body)
-        for report in ("full", "station_performance", "location_performance", "daily", "weekly", "monthly",
-                       "city", "state", "category", "scans", "leads"):
+        for fmt in ("csv", "xlsx"):
+            r = self.client.get(reverse("leads:export") + f"?format={fmt}")
+            self.assertEqual(r.status_code, 200)
+            self.assertTrue(b"".join(r.streaming_content) if r.streaming else r.content)
+        for report in ("full", "daily", "weekly", "monthly", "yearly", "category", "scans", "leads"):
             r = self.client.get(reverse("reports:index") + f"?report={report}&range=all")
             self.assertEqual(r.status_code, 200, report)
-        r = self.client.get(reverse("qrcodes:png", args=[self.mapping.pk]))
-        self.assertEqual(r["Content-Type"], "image/png")
-        r = self.client.get(reverse("qrcodes:pdf", args=[self.mapping.pk]))
-        pdf = b"".join(r.streaming_content)
-        self.assertTrue(pdf.startswith(b"%PDF"))
-        r = self.client.post(reverse("qrcodes:bulk_download"), {"scope": "filtered", "format": "zip"})
-        data = b"".join(r.streaming_content)
-        names = zipfile.ZipFile(io.BytesIO(data)).namelist()
-        self.assertIn("manifest.csv", names)
-        self.assertEqual(len([n for n in names if n.endswith(".png")]), 2)
-        r = self.client.post(reverse("qrcodes:bulk_download"), {"scope": "filtered", "format": "pdf", "per_page": "4"})
-        self.assertTrue(b"".join(r.streaming_content).startswith(b"%PDF"))
 
-    def test_location_delete_blocked_when_in_use(self):
+
+class DashboardCountTests(BaseCase):
+    def test_today_month_year_counts(self):
+        self.enquiry()                                    # today
+        self.client.logout()
+        self.enquiry(mobile="9123456780")                 # moved to more than a year ago below
+        old = Lead.objects.get(mobile="9123456780")
+        Lead.objects.filter(pk=old.pk).update(submitted_at=timezone.now() - timedelta(days=400))
         self.client.force_login(self.admin)
-        self.client.post(reverse("locations:delete", args=[self.loc.pk]))
-        self.assertTrue(Location.objects.filter(pk=self.loc.pk).exists())
-        empty = Location.objects.create(name="Empty", address="x", city="X", state="Y", pincode="123456")
-        self.client.post(reverse("locations:delete", args=[empty.pk]))
-        self.assertFalse(Location.objects.filter(pk=empty.pk).exists())
-
-    def test_regenerate_requires_confirmation(self):
-        self.client.force_login(self.admin)
-        token = self.mapping.token
-        self.client.post(reverse("qrcodes:regenerate", args=[self.mapping.pk]),
-                         {"confirm_station_id": "WRONG", "reason": "Testing the flow", "acknowledge": "on"})
-        self.assertEqual(QRCodeMapping.objects.get(pk=self.mapping.pk).token, token)
-        self.client.post(reverse("qrcodes:regenerate", args=[self.mapping.pk]),
-                         {"confirm_station_id": self.station.station_id, "reason": "Testing the flow", "acknowledge": "on"})
-        self.assertNotEqual(QRCodeMapping.objects.get(pk=self.mapping.pk).token, token)
-
-
-class ImportTests(BaseCase):
-    def test_location_and_station_csv_import(self):
-        self.client.force_login(self.admin)
-        csv = ("Location ID,Location Name,Address,City,District,State,PIN Code,Latitude,Longitude,Contact Person,Contact Number,Status\n"
-               ",Coimbatore Hub,Avinashi Road,Coimbatore,Coimbatore,Tamil Nadu,641014,11.01,76.95,Ravi,9876543210,Active\n"
-               "CUST-01,Madurai Hub,Bypass Road,Madurai,Madurai,Tamil Nadu,625010,,,,,Inactive\n"
-               ",Bad Row,,Madurai,,Tamil Nadu,12,,,,,Active\n")
-        r = self.client.post(reverse("locations:import"), {
-            "file": SimpleUploadedFile("locs.csv", csv.encode()), "update_existing": "on"})
-        result = r.context["result"]
-        self.assertEqual(result["created"], 2)
-        self.assertEqual(len(result["errors"]), 1)
-        self.assertTrue(Location.objects.filter(location_id="CUST-01", status="inactive").exists())
-
-        csv2 = ("Location ID,Station Name,Station Address,Charger Type,Charger Capacity,Status\n"
-                "CUST-01,Madurai Station A,Bypass Road,DC – CCS2,60,Active\n"
-                "CUST-01,Madurai Station B,Bypass Road,type 2,22 kW,Active\n"
-                "NOPE,Ghost,Somewhere,,,Active\n")
-        r = self.client.post(reverse("stations:import"), {"file": SimpleUploadedFile("st.csv", csv2.encode())})
-        result = r.context["result"]
-        self.assertEqual(result["created"], 2)
-        self.assertEqual(len(result["errors"]), 1)
-        tokens = set(QRCodeMapping.objects.values_list("token", flat=True))
-        self.assertEqual(len(tokens), ChargingStation.objects.count())
+        ctx = self.client.get(reverse("dashboard:home")).context
+        stats = ctx["stats"]
+        self.assertEqual((stats["today"], stats["month"], stats["year"], stats["total"]), (1, 1, 1, 2))
+        self.assertEqual(sum(ctx["yearly_chart"]["leads"]), 2)
+        self.assertEqual(ctx["daily_chart"]["leads"][-1], 1)

@@ -38,16 +38,11 @@
         <div class="mb-3 flex items-center justify-between"><h3 class="card-title">Source (locked)</h3><span class="chip" title="Captured from the QR token at submission. Cannot be edited.">🔒 Permanent</span></div>
         <dl>
           {% if request.user.is_staff_member %}
-          <div class="dl-row"><dt>Location</dt><dd>{{ lead.location_name }}</dd></div>
-          <div class="dl-row"><dt>Location ID</dt><dd class="font-mono text-xs">{{ lead.location_code }}</dd></div>
-          <div class="dl-row"><dt>Station</dt><dd>{{ lead.station_name }}</dd></div>
+          <div class="dl-row"><dt>QR</dt><dd>{{ lead.station.name }}</dd></div>
           {% else %}
-          <div class="dl-row"><dt>Location</dt><dd><a class="link" href="{% url 'locations:detail' lead.location_id %}">{{ lead.location_name }}</a></dd></div>
-          <div class="dl-row"><dt>Location ID</dt><dd class="font-mono text-xs">{{ lead.location_code }}</dd></div>
-          <div class="dl-row"><dt>Station</dt><dd><a class="link" href="{% url 'stations:detail' lead.station_id %}">{{ lead.station_name }}</a></dd></div>
+          <div class="dl-row"><dt>QR</dt><dd><a class="link" href="{% url 'qrcodes:detail' lead.qr_mapping_id %}">{{ lead.station.name }}</a></dd></div>
           {% endif %}
-          <div class="dl-row"><dt>Station ID</dt><dd class="font-mono text-xs">{{ lead.station_code }}</dd></div>
-          <div class="dl-row"><dt>City / State</dt><dd>{{ lead.source_city }}, {{ lead.source_state }}</dd></div>
+          <div class="dl-row"><dt>QR ID</dt><dd class="font-mono text-xs">{{ lead.station_code }}</dd></div>
           <div class="dl-row"><dt>QR token</dt><dd class="font-mono text-[11px] break-all">{{ lead.qr_token }}</dd></div>
           <div class="dl-row"><dt>Submitted</dt><dd>{{ lead.submitted_at|date:"d M Y" }} at {{ lead.submitted_at|date:"h:i:s A" }}</dd></div>
           <div class="dl-row"><dt>Device</dt><dd>{{ lead.device_type|default:"—" }} · {{ lead.os|default:"—" }} · {{ lead.browser|default:"—" }}</dd></div>
@@ -83,11 +78,11 @@
     <div class="card">
       <div class="p-5"><h3 class="card-title">Other enquiries from {{ lead.mobile }}</h3></div>
       <div class="table-wrap"><table class="table">
-        <thead><tr><th>Lead</th><th>Station</th><th>Category</th><th>Submitted</th><th>Status</th></tr></thead>
+        <thead><tr><th>Lead</th><th>QR</th><th>Category</th><th>Submitted</th><th>Status</th></tr></thead>
         <tbody>
         {% for o in previous_leads %}
           <tr><td><a class="link font-mono text-xs" href="{{ o.get_absolute_url }}">{{ o.lead_id }}</a>{% if o.is_duplicate %} <span class="chip !py-0 !text-[10px]">Dup</span>{% endif %}</td>
-            <td class="text-xs">{{ o.station_name }}</td><td class="text-xs">{{ o.get_category_display }}</td>
+            <td class="text-xs">{{ o.station.name }}</td><td class="text-xs">{{ o.get_category_display }}</td>
             <td class="text-xs">{{ o.submitted_at|date:"d M Y, H:i" }}</td><td>{% badge o.status o.get_status_display %}</td></tr>
         {% endfor %}
         </tbody></table></div>

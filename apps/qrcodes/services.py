@@ -82,15 +82,15 @@ def _fit_text(draw, text, max_width, size, weight, min_size=14):
 
 
 def render_labelled_qr(mapping, width=900):
-    """A branded card: logo, 'Scan to enquire', QR code, station + location details."""
+    """A branded card: logo, 'Scan to enquire', QR code, station details.
+    The QR pattern always encodes mapping.qr_url – the permanent URL stored at creation."""
     station = mapping.station
-    location = station.location
     pad = int(width * 0.06)
     qr_size = width - 2 * pad
-    qr_img = qr_matrix_image(mapping.public_url).resize((qr_size, qr_size), Image.NEAREST)
+    qr_img = qr_matrix_image(mapping.qr_url).resize((qr_size, qr_size), Image.NEAREST)
 
     header_h = int(width * 0.22)
-    footer_h = int(width * 0.36)
+    footer_h = int(width * 0.22)
     height = header_h + qr_size + footer_h
     card = Image.new("RGB", (width, height), "white")
     draw = ImageDraw.Draw(card)
@@ -117,15 +117,9 @@ def render_labelled_qr(mapping, width=900):
     max_w = width - 2 * pad
     font, text = _fit_text(draw, station.name, max_w, int(width * 0.055), "bold")
     draw.text((width // 2, y), text, font=font, fill=INK, anchor="ma")
-    y += int(width * 0.075)
-    font, text = _fit_text(draw, location.name, max_w, int(width * 0.038), "regular")
-    draw.text((width // 2, y), text, font=font, fill=MUTED, anchor="ma")
-    y += int(width * 0.055)
-    font, text = _fit_text(draw, f"{station.city}, {station.state}", max_w, int(width * 0.034), "regular")
-    draw.text((width // 2, y), text, font=font, fill=MUTED, anchor="ma")
-    y += int(width * 0.065)
+    y += int(width * 0.08)
     id_font = get_font(int(width * 0.03), "bold")
-    draw.text((width // 2, y), f"Station ID: {station.station_id}", font=id_font, fill=BRAND_GREEN, anchor="ma")
+    draw.text((width // 2, y), f"QR ID: {station.station_id}", font=id_font, fill=BRAND_GREEN, anchor="ma")
 
     # Thin brand border
     bw = max(3, width // 150)
@@ -141,7 +135,7 @@ def build_qr_image(mapping, save=True):
     filename = f"{safe_filename(mapping.station.station_id or str(mapping.station_id))}_{mapping.token[:8]}.png"
     old_name = mapping.image.name if mapping.image else None
     mapping.image.save(filename, ContentFile(buf.getvalue()), save=False)
-    mapping.encoded_url = mapping.public_url
+    mapping.encoded_url = mapping.qr_url
     if save:
         type(mapping).objects.filter(pk=mapping.pk).update(image=mapping.image.name, encoded_url=mapping.encoded_url)
     if old_name and old_name != mapping.image.name:

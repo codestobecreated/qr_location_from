@@ -10,20 +10,19 @@ from django.views.decorators.http import require_POST
 from apps.accounts.audit import log_action
 from apps.accounts.models import AuditLog, User
 from apps.accounts.permissions import (
-    MANAGER, STAFF, assignable_users, can_assign_leads, role_required, scope_leads, scope_locations, scope_stations,
+    MANAGER, STAFF, assignable_users, can_assign_leads, role_required, scope_leads, scope_stations,
 )
 from apps.core.exports import export_response
 from apps.core.pagination import paginate
 from apps.core.utils import safe_next
-from apps.locations.models import Location
 from apps.stations.models import ChargingStation
 
 from .forms import LeadAssignForm, LeadNoteForm, LeadStatusForm
 from .models import EnquiryCategory, Lead, LeadAssignment, LeadStatus, LeadStatusHistory
 
 SORT_FIELDS = {
-    "lead_id": "pk", "name": "full_name", "category": "category", "location": "location_name",
-    "station": "station_name", "city": "source_city", "state": "source_state", "date": "submitted_at",
+    "lead_id": "pk", "name": "full_name", "category": "category",
+    "station": "station__name", "date": "submitted_at",
     "status": "status",
 }
 
@@ -45,14 +44,10 @@ def filter_leads(request, qs=None, data=None):
         if len(digits) >= 4:
             cond |= Q(mobile__contains=digits[-10:])
         qs = qs.filter(cond)
-    for param, field in (("location", "location_id"), ("station", "station_id")):
+    for param, field in (("station", "station_id"),):
         value = data.get(param) or ""
         if str(value).isdigit():
             qs = qs.filter(**{field: int(value)})
-    for param, field in (("city", "source_city__iexact"), ("state", "source_state__iexact")):
-        value = (data.get(param) or "").strip()
-        if value:
-            qs = qs.filter(**{field: value})
     category = data.get("category") or ""
     if category in EnquiryCategory.values:
         qs = qs.filter(category=category)
@@ -80,23 +75,16 @@ def filter_leads(request, qs=None, data=None):
     return qs
 
 
-FILTER_KEYS = ("q", "location", "station", "city", "state", "category", "status", "assigned",
+FILTER_KEYS = ("q", "station", "category", "status", "assigned",
                "date_from", "date_to", "duplicates")
 
 
 def _filter_options(request):
     leads = scope_leads(Lead.objects.all(), request.user)
-    location_id = request.GET.get("location", "")
     stations = scope_stations(ChargingStation.objects.order_by("name"), request.user)
-    if location_id.isdigit():
-        stations = stations.filter(location_id=int(location_id))
     return {
-        "locations": scope_locations(Location.objects.order_by("name"), request.user).only("pk", "name", "location_id")
-        if not request.user.is_staff_member else Location.objects.filter(pk__in=leads.values("location_id")).order_by("name"),
         "stations": stations.only("pk", "name", "station_id")
         if not request.user.is_staff_member else ChargingStation.objects.filter(pk__in=leads.values("station_id")).order_by("name"),
-        "cities": leads.order_by("source_city").values_list("source_city", flat=True).distinct(),
-        "states": leads.order_by("source_state").values_list("source_state", flat=True).distinct(),
         "categories": EnquiryCategory.choices,
         "statuses": LeadStatus.choices,
         "assignees": assignable_users(request.user) if can_assign_leads(request.user) else User.objects.none(),
@@ -105,7 +93,7 @@ def _filter_options(request):
 
 @role_required(MANAGER, STAFF)
 def lead_list(request):
-    qs = filter_leads(request).select_related("assigned_to")
+    qs = filter_leads(request).select_related("assigned_to", "station")
     sort = request.GET.get("sort", "-date")
     key = SORT_FIELDS.get(sort.lstrip("-"), "submitted_at")
     qs = qs.order_by(f"-{key}" if sort.startswith("-") else key, "-pk")
@@ -119,7 +107,7 @@ def lead_list(request):
 
 def _get_lead(request, pk):
     return get_object_or_404(
-        scope_leads(Lead.objects.select_related("location", "station", "qr_mapping", "assigned_to", "scan_event"), request.user),
+        scope_leads(Lead.objects.select_related("station", "qr_mapping", "assigned_to", "scan_event"), request.user),
         pk=pk,
     )
 
@@ -241,18 +229,18 @@ def lead_bulk_action(request):
 
 
 LEAD_EXPORT_HEADERS = [
-    "Lead ID", "Customer Name", "Mobile", "Email", "Enquiry Category", "Message", "Location ID", "Location Name",
-    "Station ID", "Station Name", "City", "State", "QR Token", "Submission Date", "Submission Time", "Status",
+    "Lead ID", "Customer Name", "Mobile", "Email", "Enquiry Category", "Message",
+    "QR ID", "QR Name", "QR Token", "Submission Date", "Submission Time", "Status",
     "Assigned To", "Duplicate", "Device", "Browser", "OS", "UTM Source", "UTM Medium", "UTM Campaign",
 ]
 
 
 def lead_export_rows(qs):
-    for l in qs.select_related("assigned_to").iterator(chunk_size=500):
+    for l in qs.select_related("assigned_to", "station").iterator(chunk_size=500):
         local = timezone.localtime(l.submitted_at)
         yield [
-            l.lead_id, l.full_name, l.mobile, l.email, l.get_category_display(), l.message, l.location_code,
-            l.location_name, l.station_code, l.station_name, l.source_city, l.source_state, l.qr_token,
+            l.lead_id, l.full_name, l.mobile, l.email, l.get_category_display(), l.message,
+            l.station.station_id, l.station.name, l.qr_token,
             local.strftime("%Y-%m-%d"), local.strftime("%H:%M:%S"), l.get_status_display(),
             l.assigned_to.display_name if l.assigned_to else "", "Yes" if l.is_duplicate else "No",
             l.device_type, l.browser, l.os, l.utm_source, l.utm_medium, l.utm_campaign,

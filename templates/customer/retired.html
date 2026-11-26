@@ -3,7 +3,7 @@
 {% block content %}
 <section class="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm sm:p-8">
   <h1 class="text-xl font-bold text-slate-900">This QR code has been replaced</h1>
-  <p class="mt-2 text-sm text-slate-600">The QR code you scanned is no longer in use. Please scan the latest QR code displayed at the charging station, or contact RELUX ELECTRIC directly.</p>
+  <p class="mt-2 text-sm text-slate-600">The QR code you scanned is no longer in use. Please scan the latest RELUX ELECTRIC QR code, or contact RELUX ELECTRIC directly.</p>
   <div class="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-center">
     {% if site_settings.support_phone %}<a href="tel:{{ site_settings.support_phone }}" class="btn-primary">Call {{ site_settings.support_phone }}</a>{% endif %}
     {% if site_settings.website_url %}<a href="{{ site_settings.website_url }}" class="btn-light" rel="noopener">Visit our website</a>{% endif %}

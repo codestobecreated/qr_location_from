@@ -5,7 +5,7 @@ from django.db import models, transaction
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.locations.models import Location, generate_code
+from apps.core.utils import generate_code
 from apps.qrcodes.models import QRCodeMapping, QRScanEvent
 from apps.stations.models import ChargingStation
 
@@ -34,9 +34,8 @@ class LeadStatus(models.TextChoices):
 
 # Fields captured from the QR token at submission time. They can never change afterwards.
 IMMUTABLE_SOURCE_FIELDS = (
-    "location_id", "station_id", "qr_mapping_id", "qr_token",
-    "location_code", "location_name", "station_code", "station_name",
-    "source_city", "source_state", "submitted_at",
+    "station_id", "qr_mapping_id", "qr_token", "station_code", "station_name",
+    "submitted_at",
     "full_name", "mobile", "email", "category", "message",
 )
 
@@ -54,20 +53,16 @@ class Lead(models.Model):
     consent_at = models.DateTimeField(null=True, blank=True)
 
     # Source – resolved server-side from the QR token, never from user input
-    location = models.ForeignKey(Location, on_delete=models.PROTECT, related_name="leads", editable=False)
-    station = models.ForeignKey(ChargingStation, on_delete=models.PROTECT, related_name="leads", editable=False)
+    station = models.ForeignKey(ChargingStation, on_delete=models.PROTECT, related_name="leads", editable=False,
+                                verbose_name="QR code")
     qr_mapping = models.ForeignKey(QRCodeMapping, on_delete=models.PROTECT, related_name="leads", editable=False)
     qr_token = models.CharField(max_length=64, editable=False)
     scan_event = models.ForeignKey(
         QRScanEvent, null=True, blank=True, on_delete=models.SET_NULL, related_name="leads", editable=False
     )
     # Snapshots so the lead keeps its original context even if names are edited later
-    location_code = models.CharField(max_length=30, editable=False)
-    location_name = models.CharField(max_length=200, editable=False)
-    station_code = models.CharField(max_length=30, editable=False)
-    station_name = models.CharField(max_length=200, editable=False)
-    source_city = models.CharField(max_length=100, editable=False, db_index=True)
-    source_state = models.CharField(max_length=100, editable=False, db_index=True)
+    station_code = models.CharField("QR ID", max_length=30, editable=False)
+    station_name = models.CharField("QR name", max_length=200, editable=False)
 
     submitted_at = models.DateTimeField(default=timezone.now, editable=False, db_index=True)
 
@@ -103,7 +98,6 @@ class Lead(models.Model):
         ordering = ["-submitted_at"]
         indexes = [
             models.Index(fields=["station", "submitted_at"]),
-            models.Index(fields=["location", "submitted_at"]),
             models.Index(fields=["status", "submitted_at"]),
             models.Index(fields=["mobile", "station", "submitted_at"]),
             models.Index(fields=["is_duplicate", "submitted_at"]),
@@ -116,8 +110,6 @@ class Lead(models.Model):
         return reverse("leads:detail", args=[self.pk])
 
     def clean(self):
-        if self.station_id and self.location_id and self.station.location_id != self.location_id:
-            raise ValidationError("Lead location must match the station's location.")
         if self.qr_mapping_id and self.station_id and self.qr_mapping.station_id != self.station_id:
             raise ValidationError("QR mapping does not belong to this station.")
 

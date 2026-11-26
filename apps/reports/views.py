@@ -3,13 +3,13 @@ from django.utils import timezone
 
 from apps.accounts.audit import log_action
 from apps.accounts.models import AuditLog
-from apps.accounts.permissions import MANAGER, role_required, scope_locations, scope_stations
+from apps.accounts.permissions import MANAGER, role_required, scope_stations
 from apps.analytics import services as svc
 from apps.analytics.views import _scoped
 from apps.core.exports import export_response, xlsx_response
 from apps.leads.models import EnquiryCategory, LeadStatus
 from apps.leads.views import LEAD_EXPORT_HEADERS, lead_export_rows
-from apps.locations.models import Location
+from apps.stations.models import ChargingStation
 
 PERF_HEADERS = ["QR Scans", "Form Visits", "Form Submissions", "Total Leads", "Converted Leads", "Conversion Rate (%)"]
 
@@ -20,17 +20,10 @@ def _perf(r):
 
 def station_perf_rows(stations, dr):
     for s in svc.station_metrics(stations, dr).order_by("-m_leads", "name"):
-        yield [s.station_id, s.name, s.location.location_id, s.location.name, s.city, s.state,
-               s.get_status_display()] + _perf(s)
+        yield [s.station_id, s.name, "Active" if s.qr_mapping.is_active else "Inactive"] + _perf(s)
 
 
-def location_perf_rows(locations, dr):
-    for l in svc.location_metrics(locations, dr).order_by("-m_leads", "name"):
-        yield [l.location_id, l.name, l.city, l.district, l.state, l.get_status_display()] + _perf(l)
-
-
-STATION_PERF_HEADERS = ["Station ID", "Station", "Location ID", "Location", "City", "State", "Status"] + PERF_HEADERS
-LOCATION_PERF_HEADERS = ["Location ID", "Location", "City", "District", "State", "Status"] + PERF_HEADERS
+STATION_PERF_HEADERS = ["QR ID", "QR Name", "Status"] + PERF_HEADERS
 
 
 @role_required(MANAGER)
@@ -45,51 +38,43 @@ def index(request):
         if response is not None:
             log_action(request, AuditLog.Action.EXPORT, None, f"Report '{report}' ({fmt}), {dr.label}", object_type="Report")
             return response
-    leads, scans, _, _ = _scoped(request)
+    leads, scans, _ = _scoped(request)
     return render(request, "reports/index.html", {
         "dr": dr, "presets": svc.RANGE_PRESETS,
         "totals": svc.funnel_totals(leads, scans, dr),
-        "locations": scope_locations(Location.objects.order_by("name"), request.user).only("pk", "name", "location_id"),
+        "stations": scope_stations(ChargingStation.objects.order_by("name"), request.user).only("pk", "name", "station_id"),
         "categories": EnquiryCategory.choices, "statuses": LeadStatus.choices,
     })
 
 
 def build_report(request, report, fmt, dr):
-    leads, scans, stations, locations = _scoped(request)
+    leads, scans, stations = _scoped(request)
     stamp = dr.label.replace(" ", "_").replace("–", "to")
-    if report == "station_performance":
-        return export_response(fmt, f"relux_station_performance_{stamp}", STATION_PERF_HEADERS,
-                               station_perf_rows(stations, dr), "Station performance")
-    if report == "location_performance":
-        return export_response(fmt, f"relux_location_performance_{stamp}", LOCATION_PERF_HEADERS,
-                               location_perf_rows(locations, dr), "Location performance")
-    if report in ("daily", "weekly", "monthly"):
+    if report in ("daily", "weekly", "monthly", "yearly"):
         series = svc.time_series(leads, scans, report, dr)
         rows = ([r["period"], r["label"], r["scans"], r["leads"], r["converted"], svc.pct(r["converted"], r["leads"])]
                 for r in series)
         return export_response(fmt, f"relux_{report}_report_{stamp}",
                                ["Period start", "Period", "QR Scans", "Leads", "Converted", "Conversion Rate (%)"],
                                rows, f"{report.title()} report")
-    if report in ("city", "state", "category"):
-        field = {"city": "source_city", "state": "source_state", "category": "category"}[report]
-        data = svc.category_distribution(leads, dr) if report == "category" else svc.leads_by(leads, field, dr)
-        rows = ([r.get("label") or r[field], r["total"], r["converted"], r["rate"]] for r in data)
-        return export_response(fmt, f"relux_{report}_wise_{stamp}",
-                               [report.title(), "Leads", "Converted", "Conversion Rate (%)"], rows, f"{report.title()}-wise")
+    if report == "category":
+        rows = ([r["label"], r["total"], r["converted"], r["rate"]] for r in svc.category_distribution(leads, dr))
+        return export_response(fmt, f"relux_category_wise_{stamp}",
+                               ["Category", "Leads", "Converted", "Conversion Rate (%)"], rows, "Category-wise")
     if report == "leads":
         qs = leads.filter(dr.lead_q()).order_by("-submitted_at")
         return export_response(fmt, f"relux_leads_{stamp}", LEAD_EXPORT_HEADERS, lead_export_rows(qs), "Leads")
     if report == "scans":
-        qs = scans.filter(dr.scan_q()).select_related("station", "location").order_by("-scanned_at")
+        qs = scans.filter(dr.scan_q()).select_related("station").order_by("-scanned_at")
         rows = (
-            [timezone.localtime(s.scanned_at), s.location.location_id, s.location.name, s.station.station_id,
+            [timezone.localtime(s.scanned_at), s.station.station_id,
              s.station.name, s.token, s.device_type, s.os, s.browser, "Yes" if s.is_bot else "No",
              "Yes" if s.is_repeat else "No", "Yes" if s.form_viewed else "No", "Yes" if s.submitted else "No",
              s.utm_source, s.utm_medium, s.utm_campaign]
             for s in qs.iterator(chunk_size=1000)
         )
         return export_response(fmt, f"relux_qr_scans_{stamp}",
-                               ["Scanned at", "Location ID", "Location", "Station ID", "Station", "QR Token", "Device",
+                               ["Scanned at", "QR ID", "QR Name", "QR Token", "Device",
                                 "OS", "Browser", "Bot", "Repeat", "Form viewed", "Submitted", "UTM Source",
                                 "UTM Medium", "UTM Campaign"], rows, "QR scans")
     if report == "full":
@@ -103,8 +88,6 @@ def build_report(request, report, fmt, dr):
         ]
         sheets = [
             ("Summary", ["Metric", "Value"], summary),
-            ("Location performance", LOCATION_PERF_HEADERS, list(location_perf_rows(locations, dr))),
-            ("Station performance", STATION_PERF_HEADERS, list(station_perf_rows(stations, dr))),
             ("Monthly", ["Period start", "Period", "QR Scans", "Leads", "Converted"],
              [[r["period"], r["label"], r["scans"], r["leads"], r["converted"]]
               for r in svc.time_series(leads, scans, "monthly", dr)]),

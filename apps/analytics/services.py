@@ -12,7 +12,7 @@ Funnel definitions
 from datetime import date, datetime, time, timedelta
 
 from django.db.models import Count, F, FloatField, IntegerField, OuterRef, Q, Subquery, Value
-from django.db.models.functions import Cast, Coalesce, NullIf, TruncDate, TruncMonth, TruncWeek
+from django.db.models.functions import Cast, Coalesce, NullIf, TruncDate, TruncMonth, TruncWeek, TruncYear
 from django.utils import timezone
 
 from apps.leads.models import Lead, LeadStatus
@@ -118,7 +118,7 @@ def pct(num, den):
 
 
 # ---------------------------------------------------------------------------
-# Per-station / per-location metrics via correlated sub-queries (no join explosion)
+# Per-station metrics via correlated sub-queries (no join explosion)
 # ---------------------------------------------------------------------------
 def _sub_count(model, fk, condition):
     sq = (
@@ -146,11 +146,9 @@ def _annotate_metrics(qs, fk, dr=None):
 
 
 def station_metrics(stations_qs, dr=None):
-    return _annotate_metrics(stations_qs.select_related("location"), "station", dr)
+    return _annotate_metrics(stations_qs.select_related("qr_mapping"), "station", dr)
 
 
-def location_metrics(locations_qs, dr=None):
-    return _annotate_metrics(locations_qs, "location", dr)
 
 
 METRIC_SORTS = {
@@ -167,7 +165,7 @@ def sort_metrics(qs, sort, default="-leads"):
 
 
 def top_and_bottom_stations(stations_qs, dr=None, n=10):
-    qs = station_metrics(stations_qs.filter(status="active"), dr)
+    qs = station_metrics(stations_qs.filter(qr_mapping__is_active=True), dr)
     top = list(qs.order_by("-m_leads", "-m_rate", "-m_scans", "name")[:n])
     bottom = list(qs.order_by("m_leads", "m_scans", "name")[:n])
     return top, bottom
@@ -202,7 +200,7 @@ def category_distribution(leads_qs, dr=None):
     return rows
 
 
-TRUNC = {"daily": TruncDate, "weekly": TruncWeek, "monthly": TruncMonth}
+TRUNC = {"daily": TruncDate, "weekly": TruncWeek, "monthly": TruncMonth, "yearly": TruncYear}
 
 
 def time_series(leads_qs, scans_qs, period="daily", dr=None, default_points=None):
@@ -215,10 +213,10 @@ def time_series(leads_qs, scans_qs, period="daily", dr=None, default_points=None
     if dr and dr.start:
         start, end = dr.start, dr.end or today
     else:
-        span = {"daily": 30, "weekly": 7 * 12, "monthly": 365}[period] if default_points is None else default_points
+        span = {"daily": 30, "weekly": 7 * 12, "monthly": 365, "yearly": 365 * 3}[period] if default_points is None else default_points
         first = leads.order_by("submitted_at").values_list("submitted_at", flat=True).first()
         start = timezone.localtime(first).date() if first else today - timedelta(days=span)
-        start = max(start, today - timedelta(days=365 * 3))
+        start = max(start, today - timedelta(days=365 * (10 if period == "yearly" else 3)))
         end = today
     leads = leads.filter(submitted_at__gte=_aware(start), submitted_at__lt=_aware(end + timedelta(days=1)))
     scans = scans.filter(scanned_at__gte=_aware(start), scanned_at__lt=_aware(end + timedelta(days=1)))
@@ -246,6 +244,9 @@ def time_series(leads_qs, scans_qs, period="daily", dr=None, default_points=None
         while d <= end:
             buckets.append((d, f"Wk {d:%d %b}"))
             d += timedelta(days=7)
+    elif period == "yearly":
+        for y in range(start.year, end.year + 1):
+            buckets.append((date(y, 1, 1), str(y)))
     else:
         d = date(start.year, start.month, 1)
         while d <= end:

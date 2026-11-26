@@ -71,7 +71,6 @@ class PasswordChangeView(auth_views.PasswordChangeView):
 def user_list(request):
     qs = User.objects.annotate(
         lead_count=Count("assigned_leads", distinct=True),
-        location_count=Count("assigned_locations", distinct=True),
     ).order_by("-is_active", "first_name", "username")
     q = request.GET.get("q", "").strip()
     role = request.GET.get("role", "")

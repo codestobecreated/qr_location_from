@@ -1,7 +1,0 @@
-{% extends "base.html" %}
-{% block title %}Import locations{% endblock %}
-{% block page_title %}Import locations{% endblock %}
-{% block content %}
-{% url 'locations:import_template' as template_url %}{% url 'locations:list' as back_url %}
-{% include "partials/import_page.html" with entity="locations" %}
-{% endblock %}

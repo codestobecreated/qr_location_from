@@ -110,3 +110,13 @@ def safe_next(request, default):
     if nxt and url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
         return nxt
     return default
+
+
+def generate_code(model, field, prefix, pk):
+    """Return a unique human-friendly code such as STN-000123 for the given pk."""
+    base = f"{prefix}-{pk:06d}"
+    code, n = base, 1
+    while model.objects.filter(**{field: code}).exclude(pk=pk).exists():
+        n += 1
+        code = f"{base}-{n}"
+    return code
