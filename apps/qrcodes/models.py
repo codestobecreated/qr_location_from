@@ -35,7 +35,8 @@ def build_permanent_url(token):
 
 def get_main_qr():
     """The one RELUX QR code (URL <QR_BASE_URL>/qr). Created once, then never changed."""
-    mapping = QRCodeMapping.objects.select_related("station").filter(is_main=True).first()
+    # Oldest wins: on MySQL the "only one main QR" rule is enforced here in code (see settings).
+    mapping = QRCodeMapping.objects.select_related("station").filter(is_main=True).order_by("pk").first()
     if mapping is None:
         from apps.stations.models import ChargingStation
 
@@ -50,7 +51,7 @@ def get_main_qr():
                     is_main=True,
                 )
         except IntegrityError:  # created at the same moment by another request
-            mapping = QRCodeMapping.objects.select_related("station").get(is_main=True)
+            mapping = QRCodeMapping.objects.select_related("station").filter(is_main=True).order_by("pk").first()
     return mapping
 
 

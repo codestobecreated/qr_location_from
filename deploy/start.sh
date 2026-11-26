@@ -52,5 +52,5 @@ else
     --pid "$PID_FILE" \
     --access-logfile "$APP_DIR/logs/access.log" \
     --error-logfile "$APP_DIR/logs/error.log" \
-    --daemon
+    --daemon 9>&- 8>&-
 fi

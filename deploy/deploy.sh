@@ -19,6 +19,17 @@
 # =============================================================================
 set -Eeuo pipefail
 
+# Run from a private copy: the git update below may rewrite this very file while bash is still reading it.
+if [ -z "${RELUX_DEPLOY_COPY:-}" ]; then
+  COPY="$(mktemp)"
+  cp "$0" "$COPY"
+  SELF_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+  RELUX_DEPLOY_COPY=1 bash "$COPY" "$SELF_DIR" "$@"   # an explicit folder given by the caller wins (last one)
+  rc=$?
+  rm -f "$COPY"
+  exit $rc
+fi
+
 MODE="deploy"
 APP_DIR_ARG=""
 for arg in "$@"; do
@@ -292,7 +303,8 @@ case "$RESTART_METHOD" in
   systemd) sudo -n systemctl restart "$RESTART_TARGET"
            sudo -n systemctl is-active --quiet "$RESTART_TARGET" || die "systemd unit $RESTART_TARGET is not active after restart." ;;
   hup)     kill -HUP "$RESTART_TARGET" ;;
-  start)   APP_PORT="$APP_PORT" GUNICORN_WORKERS="$GUNICORN_WORKERS" VENV_DIR="$VENV_DIR" bash "$APP_DIR/deploy/start.sh" ;;
+  # 9>&- : Gunicorn must not inherit the deploy lock, or every later deploy would think one is still running.
+  start)   APP_PORT="$APP_PORT" GUNICORN_WORKERS="$GUNICORN_WORKERS" VENV_DIR="$VENV_DIR" bash "$APP_DIR/deploy/start.sh" 9>&- ;;
 esac
 
 # --- Health check (only when we know the local port) ---------------------------

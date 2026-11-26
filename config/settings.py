@@ -125,6 +125,10 @@ DATABASES = {
 if os.getenv("DB_ENGINE", "").lower() == "sqlite":
     DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": str(BASE_DIR / "db.sqlite3")}}
 
+# Known, handled MySQL notices: qr_url (300 chars) is indexable on MySQL 8 utf8mb4, and the single
+# "main QR" rule is enforced in code (get_main_qr) because MySQL lacks conditional unique constraints.
+SILENCED_SYSTEM_CHECKS = ["mysql.W003", "models.W036"]
+
 AUTH_USER_MODEL = "accounts.User"
 
 AUTH_PASSWORD_VALIDATORS = [
